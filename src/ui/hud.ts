@@ -5,7 +5,7 @@ import { h } from './dom';
 
 const PHASE_TEXT: Record<GameDebugState['phase'], string> = {
   menu: '',
-  solo: 'Exploring alone',
+  solo: 'Solo · B toggles the bot partner',
   waiting: 'Waiting for your partner…',
   connecting: 'Connecting…',
   connected: 'Connected',

@@ -4,7 +4,7 @@ import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 
-const ALL = ['title', 'deck', 'vista', 'edge'];
+const ALL = ['title', 'play', 'vista', 'sun', 'planet', 'ship'];
 const names = process.argv.slice(2).length ? process.argv.slice(2) : ALL;
 const base = process.env.SHOTS_URL ?? 'http://localhost:4173';
 const outDir = 'shots/out';
@@ -30,13 +30,17 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
-page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+page.on('console', (m) => {
+  if (m.text().startsWith('[shot]') || m.text().startsWith('[world]')) console.log(m.text());
+  else if (m.type() === 'error') errors.push(m.text());
+});
 
 for (const name of names) {
   const t0 = Date.now();
-  await page.goto(`${base}/?shot=${name}`);
-  await page.waitForFunction(() => window.__shotReady === true, null, { timeout: 120_000 });
-  await page.screenshot({ path: `${outDir}/${name}.png` });
+  const [shotName, extra] = name.split('&', 2);
+  await page.goto(`${base}/?shot=${shotName}${extra ? '&' + name.slice(shotName.length + 1) : ''}`);
+  await page.waitForFunction(() => window.__shotReady === true, null, { timeout: 300_000 });
+  await page.screenshot({ path: `${outDir}/${name.replace(/[&=]/g, '_')}.png` });
   console.log(`${name}: ${Date.now() - t0} ms`);
 }
 await browser.close();

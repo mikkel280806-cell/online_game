@@ -17,12 +17,10 @@ export interface BoxCollider {
 
 export type Collider = CircleCollider | BoxCollider;
 
-export interface Bounds {
-  minX: number;
-  maxX: number;
-  minZ: number;
-  maxZ: number;
-}
+/** Walkable area: a rectangle, or a circle around (cx, cz). */
+export type Bounds =
+  | { minX: number; maxX: number; minZ: number; maxZ: number }
+  | { cx: number; cz: number; radius: number };
 
 /**
  * Push a circle of radius `r` at (x, z) out of every collider and keep it inside `bounds`.
@@ -67,8 +65,19 @@ export function resolve(x: number, z: number, r: number, colliders: Collider[], 
         }
       }
     }
-    x = Math.max(bounds.minX + r, Math.min(x, bounds.maxX - r));
-    z = Math.max(bounds.minZ + r, Math.min(z, bounds.maxZ - r));
+    if ('radius' in bounds) {
+      const dx = x - bounds.cx;
+      const dz = z - bounds.cz;
+      const max = bounds.radius - r;
+      const d = Math.hypot(dx, dz);
+      if (d > max) {
+        x = bounds.cx + (dx / d) * max;
+        z = bounds.cz + (dz / d) * max;
+      }
+    } else {
+      x = Math.max(bounds.minX + r, Math.min(x, bounds.maxX - r));
+      z = Math.max(bounds.minZ + r, Math.min(z, bounds.maxZ - r));
+    }
   }
   return { x, z };
 }

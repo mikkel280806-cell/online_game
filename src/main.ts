@@ -2,14 +2,16 @@ import '@fontsource/rajdhani/latin-500.css';
 import '@fontsource/rajdhani/latin-600.css';
 import '@fontsource/rajdhani/latin-700.css';
 import '@fontsource/orbitron/latin-700.css';
-import { Vector3 } from 'three';
-import { FollowCamera } from './engine/camera';
+import { Quaternion, Vector3 } from 'three';
+import { Avatar } from './characters';
+import { CameraRig } from './engine/camera';
 import { Input } from './engine/input';
 import { FixedStepper, Loop, SIM_DT } from './engine/loop';
 import { Renderer, type Quality } from './engine/renderer';
 import { FrameStats } from './engine/stats';
+import { LANDING_PAD, PLANET_DIR, SUN_DIR, WRECK } from './env/layout';
 import { Game, roleFor, type GameDebugState } from './game/game';
-import { Avatar } from './characters';
+import { NO_CONTROL, type PlayerControl } from './game/player';
 import { ROLES } from './game/roles';
 import { createWorld } from './game/world';
 import { createRoom, joinRoom, type NetOptions, type Session } from './net';
@@ -50,20 +52,34 @@ initTelemetry(!shot && (telemetryParam ? telemetryParam === '1' : !isLocalHost))
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLDivElement;
-const follow = new FollowCamera(innerWidth / innerHeight);
-const camera = follow.camera;
+const qualityParam = params.get('quality') as Quality | null;
+const quality: Quality = qualityParam && ['low', 'medium', 'high'].includes(qualityParam) ? qualityParam : 'high';
+
+const rig = new CameraRig(innerWidth / innerHeight);
+const camera = rig.camera;
 const renderer = new Renderer(canvas, camera);
-const world = createWorld(renderer.gl);
-renderer.setScene(world.scene);
-renderer.onResize = (w, h) => follow.setAspect(w / h);
-renderer.resize();
-const quality = params.get('quality') as Quality | null;
-if (quality && ['low', 'medium', 'high'].includes(quality)) renderer.setQuality(quality);
+renderer.setQuality(quality);
 const scale = Number(params.get('scale'));
 if (scale > 0) renderer.setScaleCap(Math.max(0.25, Math.min(2, scale)));
 
+const world = createWorld(renderer.gl, camera, quality);
+rig.groundAt = world.heightAt;
+rig.attach(canvas);
+renderer.setScene(world.scene);
+const toneMap = params.get('tm');
+renderer.configurePost({
+  quality,
+  sunMesh: world.sky.sunMesh,
+  ...(toneMap === 'agx' || toneMap === 'aces' || toneMap === 'neutral' ? { toneMap } : {}),
+});
+renderer.onResize = (w, h) => {
+  rig.setAspect(w / h);
+  world.lighting.updateFrustums();
+};
+renderer.resize();
+
 const input = new Input();
-const game = new Game(world, world.scene, input);
+const game = new Game(world);
 const stats = new FrameStats();
 const hud = new Hud(uiRoot);
 const perf = new PerfOverlay(uiRoot);
@@ -97,24 +113,39 @@ const feedback = new FeedbackBox(uiRoot, {
   toast: (t) => hud.toast(t),
 });
 
+// ---------- Game start ----------
+
+type Mode = 'menu' | 'transition' | 'play';
+let mode: Mode = 'menu';
+let transitionT = 0;
+let solo = false;
+const titleCenter = new Vector3(LANDING_PAD.x - 2, 0, LANDING_PAD.z);
+const camFrom = new Vector3();
+const quatFrom = new Quaternion();
+
 window.addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
   if (e.code === 'F3') {
     e.preventDefault();
     perf.toggle();
   } else if (e.code === 'F8') {
     e.preventDefault();
     void feedback.open();
+  } else if (mode === 'play' && e.code === 'KeyC') {
+    const free = rig.toggleFree() === 'free';
+    hud.toast(free ? 'Free camera: WASD fly · drag to look · Space/Ctrl up/down · Shift fast · C to return' : 'Camera follows you again', 3500);
+  } else if (mode === 'play' && e.code === 'KeyH') {
+    uiRoot.classList.toggle('hide-hud');
+  } else if (mode === 'play' && solo && e.code === 'KeyB') {
+    if (game.bot) {
+      game.removeBot();
+      hud.toast('Bot partner dismissed');
+    } else {
+      game.spawnBot();
+      hud.toast('Bot partner joined');
+    }
   }
 });
-
-// ---------- Game start ----------
-
-type Mode = 'menu' | 'transition' | 'play';
-let mode: Mode = 'menu';
-let transitionT = 0;
-const orbitCenter = new Vector3(0, 0, -2);
-const camFrom = new Vector3();
-const lookFrom = new Vector3();
 
 function beginPlay(roomCode: string | null, role: 'host' | 'guest' | 'solo'): void {
   lobby.hide();
@@ -122,7 +153,8 @@ function beginPlay(roomCode: string | null, role: 'host' | 'guest' | 'solo'): vo
   setTelemetryContext({ room: roomCode, role });
   reportSession({ ...deviceInfo(renderer.gl.getContext()), quality: renderer.getQuality(), transport: netOptions.signaling });
   camFrom.copy(camera.position);
-  camera.getWorldDirection(lookFrom).multiplyScalar(20).add(camera.position);
+  quatFrom.copy(camera.quaternion);
+  rig.setView(0, 0.42, 12);
   mode = 'transition';
   transitionT = 0;
 }
@@ -144,7 +176,9 @@ const lobby = new Lobby({
     startSession(await joinRoom(code, netOptions));
   },
   solo() {
+    solo = true;
     game.spawnLocal(roleFor('solo'));
+    if (params.get('bot') !== '0') game.spawnBot();
     beginPlay(null, 'solo');
   },
 });
@@ -156,45 +190,60 @@ window.addEventListener('pagehide', () => game.detachSession());
 let perfTimer = 0;
 const stepper = new FixedStepper();
 const ease = (t: number) => t * t * (3 - 2 * t);
-const look = new Vector3();
+
+/** Turn keys into a world-space move direction relative to where the camera looks. */
+function playerControl(): PlayerControl {
+  if (mode !== 'play' || rig.mode === 'free' || feedback.isOpen) return NO_CONTROL;
+  const a = input.moveAxis();
+  const yaw = rig.viewYaw;
+  const fx = -Math.sin(yaw);
+  const fz = -Math.cos(yaw);
+  const rx = Math.cos(yaw);
+  const rz = -Math.sin(yaw);
+  return {
+    x: rx * a.x + fx * a.y,
+    z: rz * a.x + fz * a.y,
+    sprint: input.isDown('ShiftLeft') || input.isDown('ShiftRight'),
+  };
+}
 
 function updateCamera(dt: number, time: number): void {
   if (mode === 'menu') {
-    follow.orbit(orbitCenter, 27, 8.5, time * 0.045 + 0.5);
+    rig.orbit(titleCenter, 34, 7, time * 0.03 + 2.4, 3);
     return;
   }
-  const target = game.local?.position ?? orbitCenter;
+  rig.update(dt, game.local?.position ?? null, input);
   if (mode === 'transition') {
-    transitionT = Math.min(1, transitionT + dt / 1.8);
-    follow.snapTo(target);
-    const goalPos = camera.position.clone();
+    transitionT = Math.min(1, transitionT + dt / 2.2);
     const k = ease(transitionT);
-    camera.position.lerpVectors(camFrom, goalPos, k);
-    look.lerpVectors(lookFrom, target.clone().setY(0.8), k);
-    camera.lookAt(look);
+    camera.position.lerpVectors(camFrom, camera.position, k);
+    camera.quaternion.slerpQuaternions(quatFrom, camera.quaternion, k);
     if (transitionT >= 1) mode = 'play';
-    return;
   }
-  follow.follow(target, dt);
 }
 
 const loop = new Loop(({ dt, time, frameMs }) => {
   const now = performance.now();
   stats.push(frameMs);
   const steps = stepper.steps(dt);
-  if (!feedback.isOpen) for (let i = 0; i < steps; i++) game.update(SIM_DT, now - (steps - 1 - i) * SIM_DT * 1000);
+  const control = playerControl();
+  for (let i = 0; i < steps; i++) game.update(SIM_DT, now - (steps - 1 - i) * SIM_DT * 1000, control);
   updateCamera(dt, time);
-  world.update(time, camera.position, renderer.getPixelRatio());
+  world.update(time, camera);
 
   const state = game.debugState();
   window.__hs = state;
   if (mode !== 'menu') hud.update(state);
   const myRole = game.localRole;
   if (myRole && game.local && mode !== 'menu') hud.label('me', ROLES[myRole].name, ROLES[myRole].css, game.local.position, camera);
-  if (game.remote) {
-    const r = game.remote.avatar.role;
-    hud.label('partner', ROLES[r].name, ROLES[r].css, game.remote.visible ? game.remote.position : null, camera);
-  }
+  const partner = game.partner();
+  hud.label(
+    'partner',
+    partner ? ROLES[partner.role].name + (partner.isBot ? ' · bot' : '') : '',
+    partner ? ROLES[partner.role].css : '',
+    partner?.position ?? null,
+    camera,
+  );
 
   renderer.render(dt, frameMs);
   fulfilCapture();
@@ -212,6 +261,7 @@ const loop = new Loop(({ dt, time, frameMs }) => {
         pixelRatio: renderer.getPixelRatio(),
         quality: renderer.getQuality(),
         draws: renderer.gl.info.render.calls,
+        triangles: renderer.gl.info.render.triangles,
         transport: state.transport,
         rttMs: state.rttMs,
       });
@@ -225,39 +275,66 @@ async function runShot(name: string): Promise<void> {
   renderer.setDynamicResolution(false);
   const T = 12.5; // fixed time so animated shaders look the same every run
   lobby.el.classList.toggle('hidden', name !== 'title');
-  const place = (role: 'vanguard' | 'tether', x: number, z: number, yaw: number) => {
+  const place = (role: 'vanguard' | 'tether', x: number, z: number, yaw: number, speed: number) => {
     const a = new Avatar(role);
-    a.animate(new Vector3(x, 0, z), yaw, 0, 0);
-    world.scene.add(a.root);
+    const p = new Vector3(x, world.heightAt(x, z), z);
+    // Advance the procedural animation into a natural mid-stride pose.
+    for (let i = 0; i < 40; i++) a.animate(p, yaw, speed, 1 / 60);
+    world.add(a.root);
+    return p;
   };
+  const look = (from: Vector3, to: Vector3, fov = 42) => {
+    camera.fov = fov;
+    camera.updateProjectionMatrix();
+    camera.position.copy(from);
+    camera.lookAt(to);
+    world.lighting.updateFrustums();
+  };
+  const [sx, , sz] = world.spawnPoints[0].toArray();
   switch (name) {
     case 'title':
-      follow.orbit(orbitCenter, 27, 8.5, 0.5);
+      rig.orbit(titleCenter, 34, 7, 2.4 + T * 0.03, 3);
       break;
-    case 'deck':
-      place('vanguard', -1.6, 1.5, 2.6);
-      place('tether', 1.4, 0.8, -2.5);
-      follow.snapTo(new Vector3(0, 0, 1.5));
+    case 'play': {
+      const p = place('vanguard', sx, sz - 3, Math.PI * 0.9, 4.5);
+      place('tether', sx + 2.2, sz - 0.8, Math.PI * 0.95, 4.5);
+      rig.setView(0.25, 0.42, 12);
+      rig.snapTo(p);
       break;
-    case 'vista':
-      place('vanguard', -0.8, -9.5, 3.6);
-      place('tether', 0.8, -9.8, 2.9);
-      camera.position.set(3.5, 2.4, -2);
-      camera.lookAt(-14, 5, -40);
+    }
+    case 'vista': {
+      place('vanguard', -6, -30, Math.PI * 1.05, 0);
+      place('tether', -4.4, -31, Math.PI * 0.95, 0);
+      const wreck = new Vector3(WRECK.x, world.heightAt(WRECK.x, WRECK.z) + 20, WRECK.z);
+      look(new Vector3(-5, world.heightAt(-5, -24) + 3.2, -24), wreck, 38);
       break;
-    case 'edge':
-      place('tether', 15.5, 2, 1.2);
-      camera.position.set(9, 6, 9);
-      camera.lookAt(30, -18, -10);
+    }
+    case 'sun': {
+      const from = new Vector3(20, world.heightAt(20, 10) + 2.2, 10);
+      look(from, from.clone().addScaledVector(SUN_DIR, 100).setY(from.y + 8), 50);
       break;
+    }
+    case 'planet': {
+      const from = new Vector3(-10, world.heightAt(-10, 20) + 1.8, 20);
+      look(from, from.clone().addScaledVector(PLANET_DIR, 100), 55);
+      break;
+    }
+    case 'ship': {
+      place('vanguard', sx - 1, sz + 1, 2.4, 0);
+      place('tether', sx + 1.5, sz + 2, 3.6, 0);
+      look(new Vector3(sx - 9, 1.6, sz + 12), new Vector3(LANDING_PAD.x, 4, LANDING_PAD.z), 40);
+      break;
+    }
     default:
-      follow.snapTo(new Vector3());
+      rig.snapTo(world.spawnPoints[0]);
   }
   for (let i = 0; i < 6; i++) {
-    world.update(T, camera.position, renderer.getPixelRatio());
+    world.update(T + i / 60, camera);
     renderer.render(1 / 60, 16);
     await new Promise((r) => requestAnimationFrame(r));
   }
+  const info = renderer.gl.info.render;
+  console.info(`[shot] ${name} draws=${info.calls} triangles=${info.triangles}`);
   window.__shotReady = true;
 }
 

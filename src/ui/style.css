@@ -345,3 +345,18 @@ kbd {
   pointer-events: none;
   transition: opacity 0.4s;
 }
+
+/* H hides the HUD for screenshots. */
+#ui.hide-hud .hud,
+#ui.hide-hud .name-label,
+#ui.hide-hud .perf {
+  display: none !important;
+}
+
+#game {
+  cursor: grab;
+}
+
+#game:active {
+  cursor: grabbing;
+}

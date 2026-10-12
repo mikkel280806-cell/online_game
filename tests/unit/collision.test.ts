@@ -34,3 +34,10 @@ describe('resolve', () => {
     expect(p.x).toBeCloseTo(1.4);
   });
 });
+
+describe('circular bounds', () => {
+  it('keeps the player inside the circle', () => {
+    const p = resolve(30, 40, 0.5, [], { cx: 0, cz: 0, radius: 10 });
+    expect(Math.hypot(p.x, p.z)).toBeCloseTo(9.5);
+  });
+});

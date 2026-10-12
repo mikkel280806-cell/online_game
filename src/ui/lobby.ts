@@ -18,7 +18,7 @@ export class Lobby {
     this.input = h('input', { maxlength: 4, placeholder: 'CODE', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Room code' });
     const createBtn = h('button.btn', { text: 'Create room', 'data-testid': 'create' });
     const joinBtn = h('button.btn', { text: 'Join', 'data-testid': 'join' });
-    const soloBtn = h('button.btn.secondary', { text: 'Explore alone', 'data-testid': 'solo' });
+    const soloBtn = h('button.btn.secondary', { text: 'Play solo with a bot partner', 'data-testid': 'solo' });
     this.buttons = [createBtn, joinBtn, soloBtn];
 
     const run = async (fn: () => Promise<void>) => {
@@ -57,9 +57,8 @@ export class Lobby {
         h(
           'div.controls-hint',
           {},
-          h('kbd', { text: 'W' }), h('kbd', { text: 'A' }), h('kbd', { text: 'S' }), h('kbd', { text: 'D' }),
-          ' move · ', h('kbd', { text: 'Shift' }), ' sprint · ',
-          h('kbd', { text: 'F3' }), ' stats · ', h('kbd', { text: 'F8' }), ' send feedback',
+          h('kbd', { text: 'WASD' }), ' move · ', h('kbd', { text: 'Shift' }), ' sprint · drag / swipe to look · scroll to zoom · ',
+          h('kbd', { text: 'C' }), ' free camera · ', h('kbd', { text: 'F8' }), ' feedback',
         ),
       ),
     );
