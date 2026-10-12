@@ -164,7 +164,7 @@ export function buildWreck(heightAt: HeightFn, glows: GlowSet, decals: PartBuild
           const k = 1 + Math.floor(rnd() * 2);
           for (let i = 0; i < k; i++) {
             const z = zA + rnd() * (zB - zA);
-            glows.add(new Vector3(tmpV2.x + nrm.x * 0.8, tmpV2.y + nrm.y * 0.8, z).applyMatrix4(m), rnd() < 0.5 ? '#ffcf96' : '#d6e8ff', 10, 2.2, rnd() < 0.6 ? GlowMode.Flicker : GlowMode.Steady, rnd() * 9, 2);
+            glows.add(new Vector3(tmpV2.x + nrm.x * 0.8, tmpV2.y + nrm.y * 0.8, z).applyMatrix4(m), rnd() < 0.5 ? '#ffcf96' : '#d6e8ff', 10, 2.2, rnd() < 0.6 ? GlowMode.Failing : GlowMode.Steady, rnd() * 9, 2);
           }
         }
       }
@@ -266,7 +266,7 @@ export function buildWreck(heightAt: HeightFn, glows: GlowSet, decals: PartBuild
         if (l.y > 12.6 && l.y < 13.9 && l.z > 4 && l.z < 26) c.copy(bandDark);
       },
     );
-    for (let i = 0; i < 4; i++) glows.add(new Vector3(-8 + i * 5.5, 13.5, 9.5).applyMatrix4(m), '#ffd9a8', 8, 1.6, i === 2 ? GlowMode.Flicker : GlowMode.Steady, i, 2);
+    for (let i = 0; i < 4; i++) glows.add(new Vector3(-8 + i * 5.5, 13.5, 9.5).applyMatrix4(m), '#ffd9a8', 8, 1.6, i === 2 ? GlowMode.Failing : GlowMode.Steady, i, 2);
     // Vertical armour ribs on the prow flanks.
     for (const side of [-1, 1]) for (let k = 0; k < 4; k++) b.add(rbox(1.4, 34, 2.2, 0.4), hullSurf('#6c6862', 0.5), m.clone().multiply(T(side * 23.2, 0, 16 + k * 5)));
     // Prow armour plates and sensor blister.
@@ -413,7 +413,7 @@ export function buildWreck(heightAt: HeightFn, glows: GlowSet, decals: PartBuild
   for (let i = 0; i < 7; i++) {
     const p = breakPt.clone().add(new Vector3((rnd() - 0.5) * 30, 0, (rnd() - 0.5) * 30));
     p.y = ground(p) + (rnd() - 0.3) * 16;
-    glows.add(p, '#ffe2b0', 22, 2.6, GlowMode.Flicker, rnd() * 10, 2.5);
+    glows.add(p, '#ffe2b0', 22, 2.6, GlowMode.Failing, rnd() * 10, 2.5);
   }
 
   // ---- habitation ring ------------------------------------------------------------------------
@@ -464,7 +464,7 @@ export function buildWreck(heightAt: HeightFn, glows: GlowSet, decals: PartBuild
     const rr = mulberry32(seed);
     for (let i = 0; i < 3; i++) {
       const a = a0 + rr() * (a1 - a0);
-      glows.add(new Vector3(Math.cos(a) * RING_R, Math.sin(a) * RING_R, 10).applyMatrix4(m), '#ffcf96', 9, 2.0, GlowMode.Flicker, rr() * 9, 2);
+      glows.add(new Vector3(Math.cos(a) * RING_R, Math.sin(a) * RING_R, 10).applyMatrix4(m), '#ffcf96', 9, 2.0, GlowMode.Failing, rr() * 9, 2);
     }
   };
   // Attached arc: rises out of the ground beside the hull, arches over it, snapped near the top.
@@ -501,7 +501,7 @@ export function buildWreck(heightAt: HeightFn, glows: GlowSet, decals: PartBuild
       b.add(strut(p0.applyMatrix4(ringM), p1.applyMatrix4(ringM), 0.35 + r() * 0.3, 4), { color: TRUSS, metal: 0.5, rough: 0.55, panel: 0 });
     }
   }
-  glows.add(new Vector3(Math.cos(1.38) * RING_R, Math.sin(1.38) * RING_R, 4).applyMatrix4(ringM), '#cfe6ff', 30, 4, GlowMode.Flicker, 2.2, 3);
+  glows.add(new Vector3(Math.cos(1.38) * RING_R, Math.sin(1.38) * RING_R, 4).applyMatrix4(ringM), '#cfe6ff', 30, 4, GlowMode.Failing, 2.2, 3);
 
   // Fallen ring segments lying apart, half buried.
   const fallen = (s: number, lat: number, a0: number, a1: number, tiltX: number, tiltZ: number, sink: number, seed: number) => {

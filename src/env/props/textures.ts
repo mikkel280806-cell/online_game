@@ -176,24 +176,53 @@ export interface DecalAtlas {
 }
 
 /** All stencils in one white-on-transparent atlas; colour comes from the decal's vertex colour. */
-export function createDecalAtlas(maxAnisotropy: number): DecalAtlas {
-  const W = 2048;
-  const H = 2048;
-  const c = document.createElement('canvas');
-  c.width = W;
-  c.height = H;
-  const g = c.getContext('2d')!;
-  const rects: Record<string, AtlasRect> = {};
+const ATLAS_W = 2048;
+const ATLAS_H = 2048;
+
+/** Where each stencil sits in the atlas (pixels), packed in rows. */
+function atlasLayout(): { name: string; x: number; y: number; item: (typeof ATLAS_ITEMS)[AtlasKey]; rect: AtlasRect }[] {
+  const out: { name: string; x: number; y: number; item: (typeof ATLAS_ITEMS)[AtlasKey]; rect: AtlasRect }[] = [];
   let x = 8;
   let y = 8;
   let rowH = 0;
   const pad = 12;
   for (const [name, item] of Object.entries(ATLAS_ITEMS)) {
-    if (x + item.w + pad > W) {
+    if (x + item.w + pad > ATLAS_W) {
       x = 8;
       y += rowH + pad;
       rowH = 0;
     }
+    // Texture v runs bottom-up (flipY).
+    const rect = { u0: x / ATLAS_W, u1: (x + item.w) / ATLAS_W, v0: 1 - (y + item.h) / ATLAS_H, v1: 1 - y / ATLAS_H, aspect: item.w / item.h };
+    out.push({ name, x, y, item, rect });
+    x += item.w + pad;
+    rowH = Math.max(rowH, item.h);
+  }
+  return out;
+}
+
+function atlasLookup(rects: Record<string, AtlasRect>): (name: string) => AtlasRect {
+  return (name: string) => {
+    const r = rects[name];
+    if (!r) throw new Error(`props: no atlas entry ${name}`);
+    return r;
+  };
+}
+
+/** The atlas layout without painting it (no DOM): for building geometry in tests and tools. */
+export function createGeometryOnlyAtlas(): DecalAtlas {
+  const rects: Record<string, AtlasRect> = {};
+  for (const e of atlasLayout()) rects[e.name] = e.rect;
+  return { texture: null as unknown as Texture, rect: atlasLookup(rects) };
+}
+
+export function createDecalAtlas(maxAnisotropy: number): DecalAtlas {
+  const c = document.createElement('canvas');
+  c.width = ATLAS_W;
+  c.height = ATLAS_H;
+  const g = c.getContext('2d')!;
+  const rects: Record<string, AtlasRect> = {};
+  for (const { name, x, y, item, rect } of atlasLayout()) {
     g.save();
     g.translate(x, y);
     g.beginPath();
@@ -201,23 +230,13 @@ export function createDecalAtlas(maxAnisotropy: number): DecalAtlas {
     g.clip();
     item.paint(g, item.w, item.h);
     g.restore();
-    // Texture v runs bottom-up (flipY).
-    rects[name] = { u0: x / W, u1: (x + item.w) / W, v0: 1 - (y + item.h) / H, v1: 1 - y / H, aspect: item.w / item.h };
-    x += item.w + pad;
-    rowH = Math.max(rowH, item.h);
+    rects[name] = rect;
   }
   const texture = new CanvasTexture(c);
   texture.colorSpace = SRGBColorSpace;
   texture.anisotropy = maxAnisotropy;
   texture.minFilter = LinearMipmapLinearFilter;
-  return {
-    texture,
-    rect(name: string) {
-      const r = rects[name];
-      if (!r) throw new Error(`props: no atlas entry ${name}`);
-      return r;
-    },
-  };
+  return { texture, rect: atlasLookup(rects) };
 }
 
 export interface PadMarkSpec {

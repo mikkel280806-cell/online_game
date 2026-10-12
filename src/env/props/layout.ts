@@ -2,6 +2,7 @@
 // and the colliders come from one source and tests can check them without a GPU.
 // World metres, +Y up, -Z north. See src/env/layout.ts for the shared world layout.
 
+import { CatmullRomCurve3, Vector3 } from 'three';
 import type { Collider } from '../../game/collision';
 import { LANDING_PAD, SPAWN_POINTS } from '../layout';
 
@@ -15,15 +16,42 @@ export const PAD_TOP = 0.16;
 export const PAD_TOP_RADIUS = 12.9;
 export const PAD_BASE_RADIUS = 13.6;
 
+/** Two-step stair down the pad's west rim (toward the habs): radius and top height of each step. */
+export const PAD_STAIR = {
+  angle: Math.PI + 0.02,
+  steps: [
+    { r: PAD_BASE_RADIUS - 0.15, h: PAD_TOP },
+    { r: PAD_BASE_RADIUS + 0.27, h: PAD_TOP * 0.5 },
+  ],
+  halfWidth: 1.2,
+  halfDepth: 0.25,
+} as const;
+
+/** Vehicle ramp off the north-west rim: from the pad top at r0 down to the ground over `run`. */
+export const PAD_RAMP = { angle: Math.atan2(-0.55, -0.83), r0: PAD_TOP_RADIUS - 0.2, run: 2.6, halfWidth: 2.1 } as const;
+
 /**
- * Height of the walkable pad surface at (x, z), or 0 off the pad. Gameplay can add this to the
- * terrain height so feet stand on the pad instead of sinking 16 cm into it.
+ * Height of the walkable pad surface at (x, z), or 0 off the pad: the deck, its bevelled rim, the
+ * stair and the vehicle ramp. Gameplay adds this to the terrain height so feet stand on the pad
+ * (and on the steps) instead of sinking into them.
  */
 export function padSurfaceHeight(x: number, z: number): number {
-  const r = Math.hypot(x - LANDING_PAD.x, z - LANDING_PAD.z);
+  const dx = x - LANDING_PAD.x;
+  const dz = z - LANDING_PAD.z;
+  const r = Math.hypot(dx, dz);
   if (r <= PAD_TOP_RADIUS) return PAD_TOP;
-  if (r >= PAD_BASE_RADIUS) return 0;
-  return (PAD_TOP * (PAD_BASE_RADIUS - r)) / (PAD_BASE_RADIUS - PAD_TOP_RADIUS);
+  let h = r >= PAD_BASE_RADIUS ? 0 : (PAD_TOP * (PAD_BASE_RADIUS - r)) / (PAD_BASE_RADIUS - PAD_TOP_RADIUS);
+  const along = (a: number) => dx * Math.cos(a) + dz * Math.sin(a);
+  const across = (a: number) => -dx * Math.sin(a) + dz * Math.cos(a);
+  if (Math.abs(across(PAD_STAIR.angle)) <= PAD_STAIR.halfWidth) {
+    const ra = along(PAD_STAIR.angle);
+    for (const s of PAD_STAIR.steps) if (Math.abs(ra - s.r) <= PAD_STAIR.halfDepth) h = Math.max(h, s.h);
+  }
+  if (Math.abs(across(PAD_RAMP.angle)) <= PAD_RAMP.halfWidth) {
+    const ra = along(PAD_RAMP.angle);
+    if (ra >= PAD_RAMP.r0 - 0.2 && ra <= PAD_RAMP.r0 + PAD_RAMP.run) h = Math.max(h, PAD_TOP * (1 - (ra - PAD_RAMP.r0) / PAD_RAMP.run));
+  }
+  return h;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -53,26 +81,54 @@ export const WREN = {
 export const RAMP_RUN = Math.sqrt(WREN.rampLength ** 2 - WREN.floorY ** 2);
 export const RAMP_LIP_Z = WREN.rampHingeZ + RAMP_RUN;
 
-/** Ship-space collision circles (x, z, r) covering hull, nacelles, gear and the ramp. */
-export const WREN_COLLIDERS_LOCAL: ReadonlyArray<readonly [number, number, number]> = [
-  // fuselage
-  [0, -9.6, 1.4],
-  [0, -7.2, 1.9],
-  [0, -4.2, 2.1],
-  [0, -0.9, 2.15],
-  [0, 2.4, 2.1],
-  [0, 4.6, 1.9],
-  // ramp (solid: players stop at the lip)
-  [0, 6.4, 1.6],
-  [0, RAMP_LIP_Z - 1.5, 1.5],
-  // nacelles and main gear
-  ...[-1, 1].flatMap((s) => [
-    [s * WREN.nacelleX, 1.6, 1.05] as const,
-    [s * WREN.nacelleX, 3.9, 1.1] as const,
-    [s * WREN.nacelleX, 6.2, 1.05] as const,
-    [s * WREN.nacelleX, 8.5, 1.0] as const,
-    [s * 2.9, 3.4, 0.9] as const, // pylon root
-  ]),
+/**
+ * The Wren's footprint at body height (0.3-1.85 m above the pad), measured from the built
+ * geometry (tests/unit/props-colliders.test.ts checks it): half-width of the solid against z
+ * in ship space. Fuselage (nose cone to the bay walls), then the lowered ramp.
+ */
+export const WREN_HULL_FOOTPRINT: ReadonlyArray<readonly [number, number]> = [
+  [-11.25, 0.3],
+  [-10.85, 0.5],
+  [-10.5, 0.8],
+  [-10.25, 0.94],
+  [-10.0, 1.06],
+  [-9.5, 1.32],
+  [-9.0, 1.54],
+  [-8.5, 1.65],
+  [-8.0, 1.74],
+  [-7.0, 1.87],
+  [-6.0, 1.95],
+  [-5.0, 2.01],
+  [-4.0, 2.04],
+  [-3.0, 2.07],
+  [-2.0, 2.09],
+  [3.5, 2.1],
+  [4.0, 2.0],
+  [4.5, 1.94],
+  [5.0, 1.81],
+  [5.6, 1.79],
+  [5.7, 1.53],
+  [9.2, 1.53],
+];
+/** Same for each engine nacelle (centred on x = ±nacelleX): intake lip to nozzle petals. */
+export const WREN_NACELLE_FOOTPRINT: ReadonlyArray<readonly [number, number]> = [
+  [0.1, 0.3],
+  [0.25, 0.46],
+  [0.5, 0.66],
+  [0.85, 0.72],
+  [1.0, 0.73],
+  [1.5, 0.78],
+  [2.0, 0.81],
+  [2.5, 0.83],
+  [6.0, 0.8],
+  [7.0, 0.73],
+  [7.5, 0.69],
+  [8.0, 0.62],
+  [8.5, 0.54],
+  [9.0, 0.44],
+  [9.5, 0.33],
+  [10.3, 0.33],
+  [10.6, 0.12],
 ];
 
 export interface ShipPlacement {
@@ -99,7 +155,8 @@ function placeShip(): ShipPlacement {
   const len = Math.hypot(dx, dz);
   const ux = dx / len;
   const uz = dz / len;
-  const back = 3.75;
+  // (Far enough that the nozzles, now fully inside the colliders, stay 6 m from the spawns.)
+  const back = 4.1;
   return { x: LANDING_PAD.x - ux * back, z: LANDING_PAD.z - uz * back, y: PAD_TOP, yaw: Math.atan2(ux, uz) };
 }
 
@@ -157,11 +214,13 @@ export const HABS: HabSpec[] = [
     axis: 'x',
     length: 10,
     radius: 2.3,
-    airlock: { side: 1, along: 2.6 },
+    // Airlock on the north flank: the south flank carries the tunnel from HAB-1 (they used to
+    // run into each other).
+    airlock: { side: -1, along: 2.6 },
     windows: [
       { along: -2.8, side: 1, lit: false },
       { along: -0.8, side: 1, lit: true },
-      { along: 1.0, side: -1, lit: false },
+      { along: 0.3, side: -1, lit: false },
       { along: -2.0, side: -1, lit: true },
     ],
   },
@@ -211,9 +270,11 @@ export interface ContainerSpec {
 export const CONTAINER = { length: 6, width: 2.4, height: 2.6 } as const;
 
 export const CONTAINERS: ContainerSpec[] = [
+  // A stack: two side by side (rails touching, so there is no slit of daylight between them)
+  // and one craned on top across both.
   { x: -7.2, z: 21.6, y: 0, yaw: 0.02, color: '#566466', label: 'KS7-03' },
-  { x: -7.0, z: 24.25, y: 0, yaw: -0.015, color: '#8a5634', label: 'KS7-11' },
-  { x: -7.4, z: 22.95, y: CONTAINER.height, yaw: 0.07, color: '#b4afa3', label: 'KS7-07' },
+  { x: -7.0, z: 24.0, y: 0, yaw: 0.02, color: '#8a5634', label: 'KS7-11' },
+  { x: -7.4, z: 22.8, y: CONTAINER.height, yaw: 0.07, color: '#b4afa3', label: 'KS7-07' },
   { x: 8.5, z: -24, y: 0, yaw: Math.PI / 2 + 0.05, color: '#3f4756', label: 'KS7-14' },
 ];
 
@@ -272,13 +333,14 @@ export interface FloodSpec {
   aimZ: number;
   /** Carries one of the real SpotLights. */
   realLight: boolean;
-  flicker: boolean;
+  /** Index (0-2) of a burnt-out lamp: dark lens, no glow or beam. Every working lamp is steady. */
+  deadLamp?: number;
 }
 
 export const FLOODLIGHTS: FloodSpec[] = [
-  { x: -9.3, z: 14.2, height: 8, aimX: -7.5, aimZ: 7.0, realLight: true, flicker: false },
-  { x: 23.5, z: 18.8, height: 8.5, aimX: 13.5, aimZ: 7.5, realLight: true, flicker: false },
-  { x: -24, z: -14.5, height: 7.5, aimX: -17, aimZ: -12.5, realLight: false, flicker: true },
+  { x: -9.3, z: 14.2, height: 8, aimX: -7.5, aimZ: 7.0, realLight: true },
+  { x: 23.5, z: 18.8, height: 8.5, aimX: 13.5, aimZ: 7.5, realLight: true },
+  { x: -24, z: -14.5, height: 7.5, aimX: -17, aimZ: -12.5, realLight: false, deadLamp: 2 },
 ];
 
 /** Solar array: panels along a row facing the Hollow. */
@@ -323,7 +385,7 @@ function box(minX: number, maxX: number, minZ: number, maxZ: number): Collider {
 function circle(x: number, z: number, r: number): Collider {
   return { kind: 'circle', x, z, r };
 }
-/** Axis-aligned box around a (possibly slightly rotated) rectangle. */
+/** Axis-aligned box around a (possibly slightly rotated) rectangle; halfL along local X. */
 function rotatedRectAabb(x: number, z: number, halfL: number, halfW: number, yaw: number): Collider {
   const c = Math.abs(Math.cos(yaw));
   const s = Math.abs(Math.sin(yaw));
@@ -332,59 +394,310 @@ function rotatedRectAabb(x: number, z: number, halfL: number, halfW: number, yaw
   return box(x - hx, x + hx, z - hz, z + hz);
 }
 
+/** Local (lx, lz) of a frame placed like TY(x, ·, z, yaw) → world (x, z). */
+export function localToWorld(x: number, z: number, yaw: number, lx: number, lz: number): { x: number; z: number } {
+  const c = Math.cos(yaw);
+  const s = Math.sin(yaw);
+  return { x: x + lx * c + lz * s, z: z - lx * s + lz * c };
+}
+
+/**
+ * Circles covering the rectangle [x0,x1] x [z0,z1] of a rotated frame: the rectangle is cut into
+ * cells no bigger than `cell` and each cell gets the circle through its corners. The collision
+ * system only has circles and axis-aligned boxes, so this is how rotated props get tight colliders.
+ */
+function rectCircles(out: Collider[], x: number, z: number, yaw: number, x0: number, x1: number, z0: number, z1: number, cell = 0.8): void {
+  const nx = Math.max(1, Math.ceil((x1 - x0) / cell - 1e-6));
+  const nz = Math.max(1, Math.ceil((z1 - z0) / cell - 1e-6));
+  const dx = (x1 - x0) / nx;
+  const dz = (z1 - z0) / nz;
+  const r = Math.hypot(dx, dz) / 2;
+  for (let i = 0; i < nx; i++)
+    for (let j = 0; j < nz; j++) {
+      const p = localToWorld(x, z, yaw, x0 + (i + 0.5) * dx, z0 + (j + 0.5) * dz);
+      out.push(circle(p.x, p.z, r));
+    }
+}
+
+/** Half-width of a footprint profile at z (linear between samples, 0 outside). */
+function profileAt(profile: ReadonlyArray<readonly [number, number]>, z: number): number {
+  if (z < profile[0][0] || z > profile[profile.length - 1][0]) return 0;
+  for (let i = 0; i < profile.length - 1; i++) {
+    const [za, wa] = profile[i];
+    const [zb, wb] = profile[i + 1];
+    if (z >= za && z <= zb) return wa + ((z - za) / Math.max(zb - za, 1e-9)) * (wb - wa);
+  }
+  return 0;
+}
+
+/**
+ * Chain of circles along local z (at local x = ax) covering a body whose half-width follows
+ * `profile`: each circle covers its slice [zc - h, zc + h] out to the widest point in it.
+ */
+function profileCircles(out: Collider[], ax: number, profile: ReadonlyArray<readonly [number, number]>, spacing: number): void {
+  const z0 = profile[0][0];
+  const z1 = profile[profile.length - 1][0];
+  const n = Math.max(1, Math.ceil((z1 - z0) / spacing));
+  const h = (z1 - z0) / n / 2;
+  for (let k = 0; k < n; k++) {
+    const zc = z0 + h * (2 * k + 1);
+    let r = 0;
+    for (let t = -1; t <= 1.0001; t += 0.125) r = Math.max(r, Math.hypot(profileAt(profile, Math.min(z1, Math.max(z0, zc + t * h))), t * h));
+    out.push(circle(ax, zc, r));
+  }
+}
+
+/** Ship-space (x, z, r) circles: fuselage and ramp, the ramp's lip, both nacelles. */
+export function wrenCollidersLocal(): [number, number, number][] {
+  const out: Collider[] = [];
+  // The ramp is solid down to its toe plate; the chain stops short of the lip and two rows of
+  // small circles square off the end (one big circle would bulge a metre past the lip).
+  const hull = WREN_HULL_FOOTPRINT.filter(([z]) => z <= 7.9);
+  profileCircles(out, 0, [...hull, [7.9, 1.53]], 0.55);
+  // The last ~1.2 m of ramp (still ankle-to-knee high) in rows of small circles; the final
+  // 0.4 m of the lip is low enough to step onto.
+  for (const z of [8.25, 8.62, 9.0]) for (const x of [-1.14, -0.38, 0.38, 1.14]) out.push(circle(x, z, 0.45));
+  for (const s of [-1, 1]) {
+    // Blunt intake: one circle set back from the lip, then the chain.
+    out.push(circle(s * WREN.nacelleX, 0.56, 0.68));
+    profileCircles(out, s * WREN.nacelleX, WREN_NACELLE_FOOTPRINT.filter(([z]) => z >= 0.85), 0.5);
+  }
+  return out.map((c) => (c.kind === 'circle' ? [c.x, c.z, c.r] : [0, 0, 0]));
+}
+
+/** Where a tunnel enters its habs and what holds it up: computed from the hull shapes. */
+export interface TunnelPlan {
+  /** Tube end points (buried inside the hulls). */
+  a: Vector3;
+  b: Vector3;
+  /** Where the tube's axis pierces each hull (docking collars go here). */
+  skinA: Vector3;
+  skinB: Vector3;
+  /** Support saddle positions (on the axis) along the exposed span. */
+  supports: Vector3[];
+}
+
+/**
+ * Sinks both ends of a tunnel into the habs it joins: walking from the middle of the span toward
+ * each layout end point, `skin` is where the axis pierces the hull, and the tube ends once its
+ * whole rim (radius + corrugation) is inside the hull, so the joint is closed from every angle.
+ * `groundY` is the ground height under the tunnel.
+ */
+export function tunnelPlan(t: TunnelSpec, groundY = 0): TunnelPlan {
+  const mid = new Vector3((t.ax + t.bx) / 2, groundY + t.y, (t.az + t.bz) / 2);
+  const rr = t.radius + 0.06;
+  const joint = (ex: number, ez: number) => {
+    const end = new Vector3(ex, groundY + t.y, ez);
+    const dir = end.clone().sub(mid).normalize();
+    const side = new Vector3(-dir.z, 0, dir.x);
+    const up = new Vector3().crossVectors(side, dir);
+    const inside = (q: Vector3, margin: number) => HABS.some((h) => habInside(h, q.x, q.y - groundY, q.z) > margin);
+    const total = mid.distanceTo(end) * 2;
+    let skin: Vector3 | null = null;
+    const p = new Vector3();
+    const q = new Vector3();
+    for (let s = 0; s <= total; s += 0.01) {
+      p.copy(mid).addScaledVector(dir, s);
+      if (!skin && inside(p, 0)) skin = p.clone();
+      if (!skin) continue;
+      let all = true;
+      for (let k = 0; k < 24 && all; k++) {
+        const a = (k / 24) * Math.PI * 2;
+        q.copy(p).addScaledVector(side, Math.cos(a) * rr).addScaledVector(up, Math.sin(a) * rr);
+        all = inside(q, 0.04);
+      }
+      if (all) return { skin, end: p.clone().addScaledVector(dir, 0.05) };
+    }
+    throw new Error('props: tunnel does not reach a hab');
+  };
+  const ja = joint(t.ax, t.az);
+  const jb = joint(t.bx, t.bz);
+  const span = ja.skin.distanceTo(jb.skin);
+  const count = Math.max(1, Math.floor(span / 2.6));
+  const supports: Vector3[] = [];
+  for (let k = 1; k <= count; k++) supports.push(ja.skin.clone().lerp(jb.skin, k / (count + 1)));
+  return { a: ja.end, b: jb.end, skinA: ja.skin, skinB: jb.skin, supports };
+}
+
+/** Yaw of the ground power pedestal. */
+export const PEDESTAL_YAW = 1.0;
+
+/** Ship-space socket of the ground-power umbilical on the Wren's port flank. */
+export const WREN_UMBILICAL = new Vector3(-1.95, 1.95, -1.0);
+
+/**
+ * The umbilical cable from the ground power pedestal to the Wren (world space, flat ground): out
+ * of the pedestal's top, straight down onto the pad, across it, and up the flank to the socket,
+ * so it only rises off the ground right at the two ends.
+ */
+export function umbilicalPath(): Vector3[] {
+  const top = localToWorld(PEDESTAL.x, PEDESTAL.z, PEDESTAL_YAW, 0, 0.3);
+  const s = shipToWorld(WREN_UMBILICAL.x, WREN_UMBILICAL.z);
+  const socket = new Vector3(s.x, SHIP.y + WREN_UMBILICAL.y, s.z);
+  const a = new Vector3(top.x, 1.0, top.z);
+  const dir = socket.clone().sub(a).setY(0).normalize();
+  const side = new Vector3(-dir.z, 0, dir.x);
+  const d = Math.hypot(socket.x - a.x, socket.z - a.z);
+  const along = (k: number) => a.clone().addScaledVector(dir, k);
+  const g = (p: Vector3) => p.setY(0.07 + padSurfaceHeight(p.x, p.z));
+  return [
+    a,
+    along(0.22).setY(0.7),
+    g(along(0.55)),
+    g(along(d * 0.35).addScaledVector(side, 0.5)),
+    g(along(d * 0.7).addScaledVector(side, -0.3)),
+    g(along(d - 0.75)),
+    along(d - 0.3).setY(socket.y - 0.95),
+    socket,
+  ];
+}
+
 export function computeColliders(): Collider[] {
   const out: Collider[] = [];
 
-  // Ship: circles in ship space.
-  for (const [lx, lz, r] of WREN_COLLIDERS_LOCAL) {
+  // The Wren: chains of circles in ship space (it stands at an angle on the pad).
+  for (const [lx, lz, r] of wrenCollidersLocal()) {
     const p = shipToWorld(lx, lz);
     out.push(circle(p.x, p.z, r));
   }
 
-  // Habitat modules (hull + skids) and their airlock porches.
+  // Habitat modules. At body height the hull is narrower than its radius (it sits on legs), and
+  // the domed ends taper: one box for the barrel and the start of the domes, one for the tips.
   for (const h of HABS) {
-    const half = h.length / 2;
-    const wide = h.radius + 0.1;
-    if (h.axis === 'x') out.push(box(h.x - half, h.x + half, h.z - wide, h.z + wide));
-    else out.push(box(h.x - wide, h.x + wide, h.z - half, h.z + half));
+    const R = h.radius;
+    const dy = HAB_LIFT + R - 1.85; // hull axis above head height
+    const wide = Math.sqrt((R + 0.09) ** 2 - dy * dy) + 0.02;
+    const narrow = Math.sqrt(R * R * (1 - 0.62 ** 2) - dy * dy);
+    const barrel = h.length / 2 - HAB_DOME;
+    for (const [along, across] of [
+      [barrel + 0.52 * HAB_DOME, wide],
+      [barrel + Math.sqrt(1 - (dy / R) ** 2) * HAB_DOME + 0.04, narrow],
+    ]) {
+      const a = habToWorld(h, -along, -across);
+      const b = habToWorld(h, along, across);
+      out.push(box(Math.min(a.x, b.x), Math.max(a.x, b.x), Math.min(a.z, b.z), Math.max(a.z, b.z)));
+    }
     const lock = airlockFootprint(h);
     out.push(box(lock.minX, lock.maxX, lock.minZ, lock.maxZ));
   }
+  // Tunnels (axis-aligned): the tube between the hull skins, the docking collars, and wider
+  // boxes at the supports for the splayed legs.
   for (const t of TUNNELS) {
-    const r = t.radius + 0.15;
-    out.push(box(Math.min(t.ax, t.bx) - r, Math.max(t.ax, t.bx) + r, Math.min(t.az, t.bz) - r, Math.max(t.az, t.bz) + r));
+    const plan = tunnelPlan(t);
+    const half = (dy: number, r: number) => Math.sqrt(Math.max(r * r - dy * dy, 0));
+    const dir = plan.skinB.clone().sub(plan.skinA).normalize();
+    const span = (p: Vector3, q: Vector3, w: number) => {
+      const alongX = Math.abs(dir.x) > Math.abs(dir.z);
+      out.push(
+        box(
+          Math.min(p.x, q.x) - (alongX ? 0 : w),
+          Math.max(p.x, q.x) + (alongX ? 0 : w),
+          Math.min(p.z, q.z) - (alongX ? w : 0),
+          Math.max(p.z, q.z) + (alongX ? w : 0),
+        ),
+      );
+    };
+    span(plan.a, plan.b, half(t.y - 1.85, t.radius + 0.04) + 0.03);
+    const collar = half(t.y - 1.85, t.radius + 0.2) + 0.03;
+    span(plan.skinA.clone().addScaledVector(dir, 0.27), plan.skinA.clone().addScaledVector(dir, -0.1), collar);
+    span(plan.skinB.clone().addScaledVector(dir, -0.27), plan.skinB.clone().addScaledVector(dir, 0.1), collar);
+    for (const sp of plan.supports) span(sp.clone().addScaledVector(dir, -0.2), sp.clone().addScaledVector(dir, 0.2), t.radius + 0.36);
   }
 
+  // Cargo containers on the ground (the stacked one is above head height); door hardware sticks
+  // out a few cm past the frame.
   for (const c of CONTAINERS) {
-    if (c.y > 0) continue; // stacked: covered by the ones below
-    out.push(rotatedRectAabb(c.x, c.z, CONTAINER.length / 2, CONTAINER.width / 2, c.yaw));
-  }
-  for (const c of CRATES) {
     if (c.y > 0) continue;
-    if (c.kind === 'drum') out.push(circle(c.x, c.z, 0.34));
-    else if (c.w * c.d > 0.6) out.push(rotatedRectAabb(c.x, c.z, c.w / 2, c.d / 2, c.yaw));
+    out.push(rotatedRectAabb(c.x, c.z, CONTAINER.length / 2 + 0.07, CONTAINER.width / 2 + 0.03, c.yaw));
+  }
+  // Crates and cases (straps and latches add a few cm), including the one stacked on a crate.
+  for (const c of CRATES) {
+    if (c.kind === 'drum') {
+      out.push(circle(c.x, c.z, 0.34));
+      continue;
+    }
+    if (c.y + c.h < 0.3) continue;
+    if (Math.abs(Math.sin(c.yaw)) < 0.2) out.push(rotatedRectAabb(c.x, c.z, c.w / 2 + 0.02, c.d / 2 + 0.05, c.yaw));
+    else rectCircles(out, c.x, c.z, c.yaw, -c.w / 2 - 0.02, c.w / 2 + 0.02, -c.d / 2 - 0.05, c.d / 2 + 0.05, 0.5);
   }
 
-  // Rover: three circles along its length.
-  for (const t of [-1.9, 0, 1.9]) {
-    out.push(circle(ROVER.x + Math.sin(ROVER.yaw) * t, ROVER.z + Math.cos(ROVER.yaw) * t, ROVER_DIMS.width / 2));
-  }
+  // Rover: chassis, wheels and treads, bumper to the end of the bed.
+  rectCircles(out, ROVER.x, ROVER.z, ROVER.yaw, -1.6, 1.6, -3.27, 3.02, 0.8);
 
-  out.push(circle(MAST.x, MAST.z, 1.3));
-  out.push(circle(MAST_CABINET.x, MAST_CABINET.z, 0.75));
+  // Comms mast: square footing, equipment cabinet, and where each guy wire passes body height.
+  out.push(box(MAST.x - 1.22, MAST.x + 1.22, MAST.z - 1.22, MAST.z + 1.22));
+  out.push(circle(MAST_CABINET.x, MAST_CABINET.z, 0.82));
+  for (const g of mastGuyAnchors()) out.push(circle(g.x + (MAST.x - g.x) * 0.085, g.z + (MAST.z - g.z) * 0.085, 0.36));
   for (const f of FLOODLIGHTS) out.push(circle(f.x, f.z, 0.45));
 
-  for (const t of TANKS) out.push(rotatedRectAabb(t.x, t.z, t.length / 2 + 0.4, t.radius + 0.25, t.yaw));
+  // Fuel tanks: shell and end domes, valve box and wheel at +X, ladder on the south side.
+  for (const t of TANKS) {
+    // Barrel (plus the fat start of the end domes), then the dome tips.
+    const domeD = t.radius * 0.7;
+    out.push(rotatedRectAabb(t.x, t.z, t.length / 2 - domeD / 2, t.radius + 0.1, t.yaw));
+    out.push(rotatedRectAabb(t.x, t.z, t.length / 2 + 0.06, t.radius * 0.8, t.yaw));
+    const ladder = localToWorld(t.x, t.z, t.yaw, -t.length * 0.1, t.radius + 0.17);
+    out.push(rotatedRectAabb(ladder.x, ladder.z, 0.27, 0.11, t.yaw));
+    const valves = localToWorld(t.x, t.z, t.yaw, t.length / 2 + 0.3, 0.3);
+    out.push(rotatedRectAabb(valves.x, valves.z, 0.36, 0.4, t.yaw));
+  }
 
-  for (const p of solarPanels()) out.push(circle(p.x, p.z, p.fallen ? 1.6 : 0.35));
+  // Solar array: each standing panel's lower half hangs at body height (two circles), the fallen
+  // panel's raised end, and the inverter box at the end of the row.
+  for (const p of solarPanels()) {
+    if (p.fallen) {
+      // The panel rests on its stump at one end: only that raised end is at body height.
+      const c = localToWorld(p.x, p.z, SOLAR_YAW, 0.4, 1.3);
+      rectCircles(out, c.x, c.z, SOLAR_YAW + 0.237, -1.02, 1.02, -1.74, 0.55, 0.8);
+      out.push(circle(p.x, p.z, 0.2));
+      continue;
+    }
+    for (const lx of [-0.5, 0.5]) {
+      const q = localToWorld(p.x, p.z, SOLAR_YAW, lx, 0.33);
+      out.push(circle(q.x, q.z, 0.83));
+    }
+  }
+  const inv = solarInverter();
+  rectCircles(out, inv.x, inv.z, inv.yaw, -0.52, 0.52, -0.32, 0.32, 0.6);
 
-  // Sign posts.
-  for (const s of [-1, 1]) out.push(circle(SIGN.x + Math.cos(SIGN.yaw) * 1.9 * s, SIGN.z - Math.sin(SIGN.yaw) * 1.9 * s, 0.15));
-  out.push(circle(PEDESTAL.x, PEDESTAL.z, 0.45));
-  out.push(rotatedRectAabb(TROLLEY.x, TROLLEY.z, 1.3, 0.75, TROLLEY.yaw));
-  out.push(circle(REEL_CART.x, REEL_CART.z, 0.8));
-  out.push(rotatedRectAabb(TARP.x, TARP.z, 1.7, 1.3, TARP.yaw));
+  // Sign: two posts and the board between them (its lower edge is at head height).
+  rectCircles(out, SIGN.x, SIGN.z, SIGN.yaw, -2.2, 2.2, -0.08, 0.14, 0.3);
+  // Ground power pedestal (cabinet + cable drum) and the umbilical where it is off the ground.
+  rectCircles(out, PEDESTAL.x, PEDESTAL.z, PEDESTAL_YAW, -0.4, 0.4, -0.57, 0.3, 0.45);
+  const cable = new CatmullRomCurve3(umbilicalPath(), false, 'centripetal');
+  for (let k = 0; k <= 80; k++) {
+    const q = cable.getPoint(k / 80);
+    if (q.y > 0.3 + 0.07) out.push(circle(q.x, q.z, 0.12));
+  }
+  // Cargo trolley (bed 1.4 x 2.5 with bumpers), hose reel cart, tarp-covered pile, lane stakes.
+  rectCircles(out, TROLLEY.x, TROLLEY.z, TROLLEY.yaw, -0.77, 0.77, -1.33, 1.33, 0.8);
+  const tow = localToWorld(TROLLEY.x, TROLLEY.z, TROLLEY.yaw, 0, -1.5);
+  out.push(circle(tow.x, tow.z, 0.2));
+  rectCircles(out, REEL_CART.x, REEL_CART.z, REEL_CART.yaw, -0.76, 0.76, -0.6, 0.95, 0.8);
+  for (const lx of [-0.6, 0.6]) {
+    const q = localToWorld(TARP.x, TARP.z, TARP.yaw, lx, 0);
+    out.push(circle(q.x, q.z, 1.32));
+  }
+  for (const p of laneStakes()) out.push(circle(p.x, p.z, 0.06));
   return out;
+}
+
+/** Azimuth the solar panels face (toward the Hollow). */
+export const SOLAR_YAW = Math.atan2(-0.87, -0.49);
+
+/** Inverter box at the end of the solar row. */
+export function solarInverter(): { x: number; z: number; yaw: number } {
+  const ends = solarPanels();
+  const e = ends[ends.length - 1];
+  return { x: e.x + 1.6, z: e.z - 1.2, yaw: SOLAR_YAW + Math.PI };
+}
+
+/** Ground anchors of the comms mast's three guy wires. */
+export function mastGuyAnchors(): { x: number; z: number }[] {
+  return [0, 1, 2].map((i) => {
+    const ang = (i / 3) * Math.PI * 2 + 0.9;
+    return { x: MAST.x + Math.cos(ang) * 5.2, z: MAST.z + Math.sin(ang) * 5.2 };
+  });
 }
 
 /**
@@ -400,6 +713,29 @@ export function habFrame(h: HabSpec): { ex: [number, number]; ez: [number, numbe
 export function habToWorld(h: HabSpec, along: number, across: number): { x: number; z: number } {
   const f = habFrame(h);
   return { x: h.x + f.ex[0] * along + f.ez[0] * across, z: h.z + f.ex[1] * along + f.ez[1] * across };
+}
+
+/** Depth of a hab hull's domed end caps (the dome is a half-ellipsoid, radius R, depth this). */
+export const HAB_DOME = 1.05;
+
+/**
+ * Signed "insideness" of a point (world x, height above the hab's ground, world z) in a hab hull:
+ * > 0 inside (roughly metres from the skin), < 0 outside. Used to sink tunnels into the hulls.
+ */
+export function habInside(h: HabSpec, x: number, y: number, z: number): number {
+  const f = habFrame(h);
+  const dx = x - h.x;
+  const dz = z - h.z;
+  const along = dx * f.ex[0] + dz * f.ex[1];
+  const across = dx * f.ez[0] + dz * f.ez[1];
+  const rho = Math.hypot(across, y - (HAB_LIFT + h.radius));
+  const cyl = h.length / 2 - HAB_DOME;
+  const a = Math.abs(along);
+  if (a <= cyl) return Math.min(h.radius - rho, h.length / 2 - a);
+  const t = (a - cyl) / HAB_DOME;
+  const r = rho / h.radius;
+  // Ellipsoid cap: approximate distance by scaling the normalised radius by the smaller axis.
+  return (1 - Math.hypot(t, r)) * Math.min(HAB_DOME, h.radius);
 }
 
 /** How far the airlock (vestibule, porch, steps) reaches from the hull axis. */

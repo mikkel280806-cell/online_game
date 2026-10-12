@@ -19,9 +19,8 @@ const colliders = computeColliders();
 describe('props layout', () => {
   it('keeps 6 m clear around every spawn point', () => {
     for (const s of SPAWN_POINTS) {
-      for (const c of colliders) {
-        expect(distanceToCollider(c, s.x, s.z)).toBeGreaterThanOrEqual(6);
-      }
+      const nearest = Math.min(...colliders.map((c) => distanceToCollider(c, s.x, s.z)));
+      expect(nearest).toBeGreaterThanOrEqual(6);
     }
   });
 
@@ -61,11 +60,13 @@ describe('props layout', () => {
   });
 
   it('leaves the lane north toward the wreck open', () => {
+    let nearest = Infinity;
     for (let x = NORTH_LANE.minX; x <= NORTH_LANE.maxX; x += 0.5) {
       for (let z = NORTH_LANE.minZ; z <= NORTH_LANE.maxZ; z += 0.5) {
-        for (const c of colliders) expect(distanceToCollider(c, x, z)).toBeGreaterThan(0);
+        for (const c of colliders) nearest = Math.min(nearest, distanceToCollider(c, x, z));
       }
     }
+    expect(nearest).toBeGreaterThan(0);
   });
 
   it('reports the pad surface height for gameplay', () => {

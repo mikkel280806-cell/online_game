@@ -370,6 +370,33 @@ export const propUniforms = {
   uDustCol: { value: DUST_COLOR.clone() } as IUniform<Color>,
 };
 
+/**
+ * Look-dev debugging. `leak`: every prop material renders both sides and paints back faces
+ * bright magenta, so any place where the camera can see *into* an object (an open end, a slit
+ * between panels, a missing face) lights up. Set before createProps().
+ */
+export const propsDebug = { leak: false };
+
+const LEAK_GLSL = /* glsl */ `
+#ifdef HS_LEAK
+  if (!gl_FrontFacing) gl_FragColor = vec4(6.0, 0.0, 6.0, 1.0);
+#endif
+`;
+
+/** Debug only: paint back faces of any material magenta (see propsDebug.leak). */
+export function applyLeakDebug(mat: MeshStandardMaterial): void {
+  if (!propsDebug.leak) return;
+  mat.side = DoubleSide;
+  mat.defines = { ...(mat.defines ?? {}), HS_LEAK: '' };
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (shader, r) => {
+    prev.call(mat, shader, r);
+    shader.fragmentShader = shader.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>\n${LEAK_GLSL}`);
+  };
+  const key = mat.customProgramCacheKey.bind(mat);
+  mat.customProgramCacheKey = () => `${key()}-leak`;
+}
+
 export function createHardSurfaceMaterial(tex: SurfaceTextures, o: HardSurfaceOptions): MeshStandardMaterial {
   const mat = new MeshStandardMaterial({
     color: 0xffffff,
@@ -423,6 +450,8 @@ export function createHardSurfaceMaterial(tex: SurfaceTextures, o: HardSurfaceOp
     shader.fragmentShader = frag;
   };
   mat.customProgramCacheKey = () => `hs-props-v2-${o.decal ? 'd' : ''}${o.pad ? 'p' : ''}${o.darkBackFaces ? 'b' : ''}`;
+  // Decals are paint: single-sided by nature, so the leak check leaves them alone.
+  if (!o.decal) applyLeakDebug(mat);
   return mat;
 }
 
@@ -430,7 +459,7 @@ export function createHardSurfaceMaterial(tex: SurfaceTextures, o: HardSurfaceOp
 
 /** Reflective cockpit glass: dark tint, mirror-like clearcoat, faint instrument glow inside. */
 export function createCanopyGlass(): MeshPhysicalMaterial {
-  return new MeshPhysicalMaterial({
+  const mat = new MeshPhysicalMaterial({
     color: new Color('#0d1217'),
     roughness: 0.05,
     metalness: 0.1,
@@ -442,48 +471,44 @@ export function createCanopyGlass(): MeshPhysicalMaterial {
     emissive: new Color('#0a2228'),
     emissiveIntensity: 0.35,
   });
+  applyLeakDebug(mat);
+  return mat;
 }
 
 // ---- light cones --------------------------------------------------------------------------------
 
-/** Additive cone of light for floodlights (no real light needed). uv.y: 1 at the lamp, 0 at the far end. */
+/**
+ * Additive cone of light for floodlights (no real light needed). uv.y: 1 at the lamp, 0 at the
+ * far end. Steady: floodlights never flicker (a flickering outpost light read as a glitch).
+ */
 export function createLightConeMaterial(): ShaderMaterial {
   return new ShaderMaterial({
     uniforms: { uTime: { value: 0 }, uColor: { value: new Color('#cfe0ff') }, uIntensity: { value: 0.05 } },
     vertexShader: /* glsl */ `
-      attribute float aFlicker;
       varying float vT;
       varying vec3 vN;
       varying vec3 vV;
-      varying float vFlick;
       void main() {
         vT = 1.0 - uv.y;
         vec4 wp = modelMatrix * vec4(position, 1.0);
         vN = normalize(mat3(modelMatrix) * normal);
         vV = normalize(cameraPosition - wp.xyz);
-        vFlick = aFlicker;
         gl_Position = projectionMatrix * viewMatrix * wp;
       }`,
     fragmentShader: /* glsl */ `
-      uniform float uTime;
       uniform vec3 uColor;
       uniform float uIntensity;
       varying float vT;
       varying vec3 vN;
       varying vec3 vV;
-      varying float vFlick;
-      float h1(float n) { return fract(sin(n * 12.9898) * 43758.5453); }
       void main() {
-        float facing = abs(dot(normalize(vN), normalize(vV)));
+        // Clamp everything that feeds pow(): interpolation can push varyings a hair out of range,
+        // and pow() of a negative number is NaN on real GPUs.
+        float t = clamp(vT, 0.0, 1.0);
+        float facing = clamp(abs(dot(normalize(vN), normalize(vV))), 0.0, 1.0);
         float edge = pow(facing, 2.2);
-        float along = pow(1.0 - vT, 1.4) * smoothstep(0.0, 0.06, vT) * (1.0 - smoothstep(0.75, 1.0, vT) * 0.6);
-        float f = 1.0;
-        if (vFlick > 0.5) {
-          float s = floor(uTime * 13.0);
-          f = 0.25 + 0.75 * step(0.3, h1(s));
-          if (h1(floor(uTime * 0.6)) < 0.3) f *= 0.15;
-        }
-        gl_FragColor = vec4(uColor * uIntensity * edge * along * f, 1.0);
+        float along = pow(1.0 - t, 1.4) * smoothstep(0.0, 0.06, t) * (1.0 - smoothstep(0.75, 1.0, t) * 0.6);
+        gl_FragColor = vec4(uColor * uIntensity * edge * along, 1.0);
       }`,
     transparent: true,
     depthWrite: false,
@@ -492,9 +517,15 @@ export function createLightConeMaterial(): ShaderMaterial {
   });
 }
 
-// ---- animated point lights (beacons, strobes, flicker) -------------------------------------------
+// ---- animated point lights (beacons, strobes, failing lamps) -------------------------------------
 
-/** Glow sprites: aParams = (size m, mode, phase, min px). Modes: 0 steady, 1 beacon, 2 flicker, 3 strobe. */
+/**
+ * Glow sprites: aParams = (size m, mode, phase, min px). Modes (see GlowMode in fx.ts):
+ * 0 steady, 1 beacon (slow red pulse), 2 failing (subtle: a slow uneven shimmer between ~80 and
+ * 100% with a brief soft dip every few seconds; never a hard on/off flicker), 3 strobe (double
+ * flash, each flash long enough to survive 20-30 fps). All modulation is continuous in time, so
+ * it looks the same at any frame rate.
+ */
 export function createGlowMaterial(): ShaderMaterial {
   return new ShaderMaterial({
     uniforms: { uTime: { value: 0 }, uScale: { value: 400 } },
@@ -504,7 +535,9 @@ export function createGlowMaterial(): ShaderMaterial {
       uniform float uTime;
       uniform float uScale;
       varying vec3 vCol;
-      float h1(float n) { return fract(sin(n * 12.9898) * 43758.5453); }
+      // Sin-free hash (stable for large inputs on every GPU).
+      float h1(float n) { n = fract(n * 0.1031); n *= n + 33.33; n *= n + n; return fract(n); }
+      float vnoise(float x) { float i = floor(x); float f = x - i; f = f * f * (3.0 - 2.0 * f); return mix(h1(i), h1(i + 1.0), f); }
       void main() {
         vec4 mv = modelViewMatrix * vec4(position, 1.0);
         float t = uTime + aParams.z;
@@ -514,19 +547,19 @@ export function createGlowMaterial(): ShaderMaterial {
           float c = fract(t / 1.7);
           k = smoothstep(0.0, 0.02, c) * (1.0 - smoothstep(0.1, 0.32, c)) + 0.04;
         } else if (mode == 2) {
-          float f = floor(t * 11.0);
-          k = 0.3 + 0.7 * step(0.28, h1(f + aParams.z * 31.0));
-          k *= 0.85 + 0.15 * sin(t * 37.0);
-          if (h1(floor(t * 0.45) + aParams.z * 7.0) < 0.22) k *= 0.08;
+          float seed = aParams.z * 13.7;
+          k = 0.8 + 0.2 * vnoise(t * 1.9 + seed);
+          float c = fract(t / (5.5 + 3.0 * h1(seed)));
+          k *= 1.0 - 0.4 * smoothstep(0.0, 0.015, c) * (1.0 - smoothstep(0.03, 0.07, c));
         } else if (mode == 3) {
           float c = fract(t / 1.3);
-          k = (c < 0.035 || (c > 0.11 && c < 0.145)) ? 1.0 : 0.0;
+          k = (c < 0.055 || (c > 0.12 && c < 0.175)) ? 1.0 : 0.0;
         }
         vCol = aColor * k;
         float px = aParams.x * uScale / max(-mv.z, 0.1);
         float size = max(px, aParams.w);
         // Keep energy roughly constant when clamped to the minimum size.
-        vCol *= min(1.0, pow(px / size, 0.6) * 1.0 + 0.35);
+        vCol *= min(1.0, pow(clamp(px / size, 0.0, 1.0), 0.6) + 0.35);
         gl_PointSize = size;
         gl_Position = projectionMatrix * mv;
       }`,
