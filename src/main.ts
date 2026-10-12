@@ -226,7 +226,7 @@ function updateCamera(dt: number, time: number): void {
     rig.orbit(titleCenter, 34, 7, time * 0.03 + 2.4, 3);
     return;
   }
-  rig.update(dt, game.local?.position ?? null, input);
+  rig.update(dt, game.local?.display ?? null, input);
   if (mode === 'transition') {
     transitionT = Math.min(1, transitionT + dt / 2.2);
     const k = ease(transitionT);
@@ -245,6 +245,7 @@ const loop = new Loop(({ dt, time, frameMs }) => {
   const steps = stepper.steps(dt);
   const control = playerControl();
   for (let i = 0; i < steps; i++) game.update(SIM_DT, now - (steps - 1 - i) * SIM_DT * 1000, control);
+  game.present(stepper.alpha, dt, now);
   updateCamera(dt, time);
   world.update(time, camera);
 
@@ -252,7 +253,7 @@ const loop = new Loop(({ dt, time, frameMs }) => {
   window.__hs = state;
   if (mode !== 'menu') hud.update(state);
   const myRole = game.localRole;
-  if (myRole && game.local && mode !== 'menu') hud.label('me', ROLES[myRole].name, ROLES[myRole].css, game.local.position, camera);
+  if (myRole && game.local && mode !== 'menu') hud.label('me', ROLES[myRole].name, ROLES[myRole].css, game.local.display, camera);
   const partner = game.partner();
   hud.label(
     'partner',

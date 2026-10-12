@@ -106,7 +106,14 @@ export class Game {
       this.sendState(dt, nowMs);
       this.bot?.update(dt, this.local, this.ground);
     }
+  }
+
+  /** Pose every avatar for the rendered frame (see LocalPlayer.present). */
+  present(alpha: number, frameDt: number, nowMs: number): void {
+    this.local?.present(alpha, frameDt);
+    this.bot?.player.present(alpha, frameDt);
     if (this.remote) {
+      // Sampled at the frame's own time, so the partner glides instead of stepping.
       const s = this.remote.buffer.sample(nowMs, NET_INTERP_DELAY_MS);
       if (s) {
         this.remote.position.set(s.x, this.world.heightAt(s.x, s.z), s.z);
@@ -114,14 +121,14 @@ export class Game {
         this.remote.speed = s.speed;
       }
       this.remote.avatar.root.visible = this.remote.visible;
-      this.remote.avatar.animate(this.remote.position, this.remote.yaw, this.remote.speed, dt);
+      this.remote.avatar.animate(this.remote.position, this.remote.yaw, this.remote.speed, frameDt);
     }
   }
 
   /** The partner, whether a person or the bot. */
   partner(): { role: RoleId; position: Vector3; isBot: boolean } | null {
     if (this.remote?.visible) return { role: this.remote.avatar.role, position: this.remote.position, isBot: false };
-    if (this.bot) return { role: this.bot.player.avatar.role, position: this.bot.player.position, isBot: true };
+    if (this.bot) return { role: this.bot.player.avatar.role, position: this.bot.player.display, isBot: true };
     return null;
   }
 

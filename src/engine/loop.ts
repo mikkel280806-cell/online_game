@@ -47,4 +47,9 @@ export class FixedStepper {
     this.acc = n === 15 ? 0 : this.acc - n * SIM_DT;
     return n;
   }
+
+  /** How far the next step has progressed, in [0, 1): for drawing between the last two steps. */
+  get alpha(): number {
+    return Math.min(this.acc / SIM_DT, 1);
+  }
 }
