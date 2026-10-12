@@ -35,6 +35,8 @@ export class Renderer {
   private renderPass: RenderPass;
   private effectPass: EffectPass;
   private quality: Quality = 'high';
+  /** Optional hard cap on the pixel ratio (e.g. ?scale=0.5 for slow machines and tests). */
+  private scaleCap = Infinity;
   private pixelRatio: number;
   private dynamicResolution = true;
   private slowFrames = 0;
@@ -96,7 +98,16 @@ export class Renderer {
   setQuality(q: Quality): void {
     this.quality = q;
     this.gl.shadowMap.enabled = q !== 'low';
-    this.setPixelRatio(Math.min(window.devicePixelRatio, QUALITY_MAX_PIXEL_RATIO[q]));
+    this.setPixelRatio(this.maxPixelRatio());
+  }
+
+  setScaleCap(cap: number): void {
+    this.scaleCap = cap;
+    this.setPixelRatio(this.maxPixelRatio());
+  }
+
+  private maxPixelRatio(): number {
+    return Math.min(window.devicePixelRatio, QUALITY_MAX_PIXEL_RATIO[this.quality], this.scaleCap);
   }
 
   getQuality(): Quality {
@@ -119,11 +130,12 @@ export class Renderer {
   }
 
   private adaptResolution(frameMs: number): void {
-    const max = Math.min(window.devicePixelRatio, QUALITY_MAX_PIXEL_RATIO[this.quality]);
+    const max = this.maxPixelRatio();
     if (frameMs > TARGET_FRAME_MS * 1.2) {
       this.fastFrames = 0;
-      if (++this.slowFrames > 30 && this.pixelRatio > 0.6) {
-        this.setPixelRatio(Math.max(0.6, this.pixelRatio - 0.1));
+      const floor = Math.min(0.6, max);
+      if (++this.slowFrames > 30 && this.pixelRatio > floor) {
+        this.setPixelRatio(Math.max(floor, this.pixelRatio - 0.1));
         this.slowFrames = 0;
       }
     } else if (frameMs < TARGET_FRAME_MS * 0.8) {

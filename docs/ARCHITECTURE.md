@@ -27,6 +27,8 @@ createRoom(opts: NetOptions): Promise<Session> // resolves once the room exists 
 joinRoom(code: string, opts: NetOptions): Promise<Session> // rejects if no host appears within ~10s, or room is full
 ```
 
+Failures reject with `NetError` (`code`: `invalid-code`, `room-not-found`, `room-full`, `no-answer`, `unreachable`); its `message` is written for players.
+
 - **Room codes:** 4 characters from `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (no look-alikes). Codes are case-insensitive on join.
 - **Signaling:** a per-room channel (`hs-room-<CODE>`) carries presence plus offer/answer/ICE messages.
   - `supabase`: Supabase Realtime channel (broadcast + presence).
@@ -45,7 +47,9 @@ joinRoom(code: string, opts: NetOptions): Promise<Session> // rejects if no host
 ## Testing
 
 - `npm test`: Vitest unit tests (pure logic: room codes, interpolation, message encoding).
-- `npm run e2e`: Playwright opens two pages in one browser context, connects them through `broadcast` signaling with real WebRTC, and checks both players see each other move.
+- `npm run e2e`: Playwright opens two pages in one browser context, connects them through `broadcast` signaling with real WebRTC (and again forced onto the relay), and checks both players see each other move. With `E2E_SUPABASE=1` (set in CI, which has internet) the same test also runs over real Supabase Realtime.
+- `npx playwright test -c tests/e2e/net.config.ts`: net layer edge cases (room full, unknown code, reconnect) through a small harness page.
+- The cloud dev container renders in software at a few fps, so tests never assume timing: they wait for state (e.g. "walked 2.5 m", "speed is 0").
 - `npm run shots`: photo mode. `/?shot=<name>` renders a fixed camera with a fixed seed and time, then sets `window.__shotReady = true`. The script saves PNGs to `shots/out/` for the visual critique loop.
 
 ## Telemetry

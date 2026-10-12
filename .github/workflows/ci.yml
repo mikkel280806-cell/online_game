@@ -19,3 +19,6 @@ jobs:
       - run: npm test
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e
+        env:
+          E2E_SUPABASE: '1'
+      - run: npx playwright test -c tests/e2e/net.config.ts

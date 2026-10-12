@@ -58,6 +58,8 @@ renderer.onResize = (w, h) => follow.setAspect(w / h);
 renderer.resize();
 const quality = params.get('quality') as Quality | null;
 if (quality && ['low', 'medium', 'high'].includes(quality)) renderer.setQuality(quality);
+const scale = Number(params.get('scale'));
+if (scale > 0) renderer.setScaleCap(Math.max(0.25, Math.min(2, scale)));
 
 const input = new Input();
 const game = new Game(world, world.scene, input);

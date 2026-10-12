@@ -6,6 +6,7 @@
 //  - BroadcastSignaling: BroadcastChannel with heartbeat presence (same-browser tests / offline dev).
 
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
+import { getSupabase } from '../services/supabase';
 import type { PeerRole } from './types';
 
 /** A message as sent by the session. `to` addresses one peer; omit it to reach everyone. */
@@ -182,14 +183,11 @@ export class SupabaseSignaling extends BaseSignaling {
 
   constructor(init: SignalingInit) {
     super(init);
-    void this.connect();
+    this.connect();
   }
 
-  private async connect(): Promise<void> {
+  private connect(): void {
     try {
-      // Loaded lazily so the broadcast path (tests, offline dev) never pulls in supabase-js.
-      const { getSupabase } = await import('../services/supabase');
-      if (this.closed) return;
       const client = getSupabase();
       const channel = client.channel(roomChannelName(this.init.code), {
         config: { broadcast: { self: false }, presence: { key: this.selfId } },

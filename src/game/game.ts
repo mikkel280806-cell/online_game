@@ -23,7 +23,7 @@ export interface GameDebugState {
   phase: SessionStatus['phase'] | 'solo' | 'menu';
   transport: string | null;
   rttMs: number | null;
-  local: { x: number; z: number } | null;
+  local: { x: number; z: number; speed: number } | null;
   remote: { x: number; z: number } | null;
   remoteSnapshots: number;
 }
@@ -103,7 +103,7 @@ export class Game {
       phase: status?.phase ?? (this.local ? 'solo' : 'menu'),
       transport: status?.transport ?? null,
       rttMs: this.session?.rttMs() ?? null,
-      local: this.local ? { x: round(this.local.position.x), z: round(this.local.position.z) } : null,
+      local: this.local ? { x: round(this.local.position.x), z: round(this.local.position.z), speed: round(this.local.speed) } : null,
       remote: this.remote?.visible ? { x: round(this.remote.position.x), z: round(this.remote.position.z) } : null,
       remoteSnapshots: this.remote?.buffer.size ?? 0,
     };
