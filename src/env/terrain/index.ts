@@ -8,19 +8,21 @@
 // - The far field reaches 10 km; keep the camera's far plane (or fog) beyond that.
 // - The group must stay at the origin, untransformed (heightAt and culling are in world space).
 
-import { BufferAttribute, Frustum, Group, Matrix4, Mesh, Vector3, type Camera } from 'three';
+import { Frustum, Group, Matrix4, Mesh, Vector3, type BufferGeometry, type Camera } from 'three';
 import type { EnvContext, Terrain } from '../types';
 import { TerrainGrid } from './grid';
 import { TerrainModel } from './heightfield';
 import { createTerrainMaterial, setTerrainFlatShading } from './material';
-import { NEAR_CELLS, NEAR_VERTS } from './grid';
-import { buildNearGeometry, buildPolarGeometries } from './meshes';
+import { buildNearChunks, buildNearGeometry, buildPolarGeometries } from './meshes';
 import { createRocks } from './rocks';
 import { computeSunShadow, createSunShadow, sunVisibilityAt, type SunShadowData } from './sunshadow';
 import { bakeTerrainTextures, type TerrainTextures } from './textures';
 
 export { setTerrainDebug } from './material';
 export { setTerrainAnisotropy } from './textures';
+
+/** The near ground is drawn as NEAR_TILES x NEAR_TILES chunks. */
+const NEAR_TILES = 6;
 
 /** World seed: both players must use the same one. */
 export const TERRAIN_SEED = 7;
@@ -68,9 +70,22 @@ export function createTerrain(ctx: EnvContext): TerrainWithStats {
   group.name = 'terrain';
 
   const groundMat = createTerrainMaterial({ textures, shadow, kind: 'ground' });
-  const near = new Mesh(buildNearGeometry(grid), groundMat);
+  // The near ground in 6x6 chunks (59 m square, ~3.9k triangles each) so the camera culls what
+  // it doesn't see; they share one vertex buffer.
+  const nearFull = buildNearGeometry(grid);
+  const near = new Group();
   near.name = 'terrain-near';
-  near.receiveShadow = true;
+  const nearChunks = buildNearChunks(nearFull, NEAR_TILES).map((g, i) => {
+    const m = new Mesh(g, groundMat);
+    m.name = `terrain-near-${i}`;
+    m.receiveShadow = true;
+    // Draw the ground after everything standing on it (props, rocks, characters render at
+    // order 0): its expensive shader then runs only where it is visible, not under every prop.
+    m.renderOrder = 1;
+    m.matrixAutoUpdate = false;
+    near.add(m);
+    return m;
+  });
   group.add(near);
 
   // The far field sits a hair behind the near mesh where they overlap. Its chunks are culled
@@ -84,6 +99,7 @@ export function createTerrain(ctx: EnvContext): TerrainWithStats {
     const m = new Mesh(g, farMat);
     m.name = `terrain-far-${i}`;
     m.receiveShadow = true;
+    m.renderOrder = 1;
     m.frustumCulled = false;
     m.matrixAutoUpdate = false;
     farChunks.push(m);
@@ -103,30 +119,13 @@ export function createTerrain(ctx: EnvContext): TerrainWithStats {
     `${rocks.count} boulders, ${rocks.colliders.length} colliders)`;
   console.info(`[terrain] ${breakdown}`);
 
-  const fullIndex = near.geometry.index!;
-  const strided = new Map<number, BufferAttribute>([[1, fullIndex]]);
+  const strided = new Map<number, BufferGeometry[]>([[1, nearChunks.map((m) => m.geometry)]]);
   const debug: TerrainDebug = {
     setFlatShading: setTerrainFlatShading,
     setNearStride(stride) {
-      let idx = strided.get(stride);
-      if (!idx) {
-        const n = Math.floor(NEAR_CELLS / stride);
-        const arr = new Uint32Array(n * n * 6);
-        let o = 0;
-        for (let j = 0; j < n; j++) {
-          for (let i = 0; i < n; i++) {
-            const v00 = j * stride * NEAR_VERTS + i * stride;
-            const v10 = v00 + stride;
-            const v01 = v00 + stride * NEAR_VERTS;
-            const v11 = v01 + stride;
-            arr.set([v00, v01, v11, v00, v11, v10], o);
-            o += 6;
-          }
-        }
-        idx = new BufferAttribute(arr, 1);
-        strided.set(stride, idx);
-      }
-      near.geometry.setIndex(idx);
+      let geos = strided.get(stride);
+      if (!geos) strided.set(stride, (geos = buildNearChunks(nearFull, NEAR_TILES, stride)));
+      nearChunks.forEach((m, i) => (m.geometry = geos[i]));
     },
     setPartVisible(part, on) {
       if (part === 'near') near.visible = on;

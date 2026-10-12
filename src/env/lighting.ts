@@ -78,7 +78,10 @@ export interface Lighting {
   update(): void;
   /** Call after the camera's projection changes (fov, aspect, near/far). */
   updateFrustums(): void;
-  /** Rebuild the cascades for a quality tier (e.g. when the renderer steps quality down). */
+  /**
+   * Shadow map size and range for a quality tier, e.g. when the renderer steps quality down
+   * (the cascade count set at creation is kept, see below).
+   */
   setQuality(quality: Quality): void;
   /** Override the cascade layout (profiling and tests). Rebuilds the shadow lights. */
   configureShadows(settings: Partial<ShadowSettings>): void;
@@ -265,7 +268,9 @@ export function createLighting(gl: WebGLRenderer, scene: Scene, camera: Perspect
       syncShared();
     },
     setQuality(q) {
-      rebuild({ ...CSM_SETTINGS[q] });
+      // At runtime keep the cascade count: changing it changes every lit shader's defines and
+      // would recompile them all (a long hitch). Map size and range are only uniforms.
+      rebuild({ ...CSM_SETTINGS[q], cascades: settings.cascades });
     },
     configureShadows(s) {
       rebuild({ ...settings, ...s });

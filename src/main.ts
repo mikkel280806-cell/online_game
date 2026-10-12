@@ -268,22 +268,27 @@ const loop = new Loop(({ dt, time, frameMs }) => {
   input.endFrame();
   lastCpuMs = performance.now() - now;
 
-  if (mode !== 'menu') {
-    perfTimer += dt;
-    if (perfTimer >= 30) {
-      perfTimer = 0;
-      reportPerf({
-        fps: Math.round(stats.fps()),
-        avgMs: +stats.avgMs().toFixed(2),
-        p95Ms: +stats.p95Ms().toFixed(2),
-        pixelRatio: renderer.getPixelRatio(),
-        quality: renderer.getQuality(),
-        draws: renderer.gl.info.render.calls,
-        triangles: renderer.gl.info.render.triangles,
-        transport: state.transport,
-        rttMs: state.rttMs,
-      });
-    }
+  // Perf samples on the title screen too (it sees the whole outpost: often the heaviest view).
+  perfTimer += dt;
+  if (perfTimer >= 30) {
+    perfTimer = 0;
+    const drs = renderer.resolutionInfo();
+    reportPerf({
+      fps: Math.round(stats.fps()),
+      avgMs: +stats.avgMs().toFixed(2),
+      p50Ms: +stats.medianMs().toFixed(2),
+      p95Ms: +stats.p95Ms().toFixed(2),
+      cpuMs: lastCpuMs !== undefined ? +lastCpuMs.toFixed(2) : null,
+      pixelRatio: renderer.getPixelRatio(),
+      quality: renderer.getQuality(),
+      drs: drs.reason,
+      drsRange: [drs.min, drs.max],
+      draws: renderer.gl.info.render.calls,
+      triangles: renderer.gl.info.render.triangles,
+      mode,
+      transport: state.transport,
+      rttMs: state.rttMs,
+    });
   }
 });
 

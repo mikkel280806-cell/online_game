@@ -22,6 +22,7 @@ import {
   GodRaysEffect,
   KernelSize,
   NoiseEffect,
+  type Pass,
   RenderPass,
   ShaderPass,
   SMAAEffect,
@@ -196,6 +197,46 @@ function onlyWhenSunInView(effect: GodRaysEffect, camera: Camera, sun: Mesh): Go
     }
   };
   return effect;
+}
+
+/**
+ * N8AO composites into a full-resolution target of its own and then copies that into the
+ * composer's output buffer. Composite straight into the output instead: one full-screen
+ * read+write of the HDR frame less. (Falls back to N8AO's own path if its internals change.)
+ */
+function compositeInPlace(pass: N8AOPostPass): N8AOPostPass {
+  type Internals = {
+    render: (renderer: WebGLRenderer, input: WebGLRenderTarget, output: WebGLRenderTarget, ...rest: unknown[]) => void;
+    outputTargetInternal?: WebGLRenderTarget;
+    copyQuad?: { render: (renderer: WebGLRenderer) => void };
+  };
+  const p = pass as unknown as Internals;
+  if (!p.outputTargetInternal || !p.copyQuad) return pass;
+  const render = p.render.bind(pass);
+  const noCopy = { material: { uniforms: { tDiffuse: { value: null } } }, render() {} };
+  p.render = (renderer, input, output, ...rest) => {
+    if (pass.renderToScreen || !output) return render(renderer, input, output, ...rest);
+    const internal = p.outputTargetInternal;
+    const copy = p.copyQuad;
+    p.outputTargetInternal = output;
+    p.copyQuad = noCopy;
+    try {
+      render(renderer, input, output, ...rest);
+    } finally {
+      p.outputTargetInternal = internal;
+      p.copyQuad = copy;
+    }
+  };
+  return pass;
+}
+
+/** Dispose a pass we created, but never the composer's shared depth texture. */
+function disposePass(pass: Pass): void {
+  // N8AO keeps the composer's depth texture as a property, and Pass.dispose() disposes every
+  // texture property it finds: that would delete the depth buffer the next chain renders into.
+  const p = pass as unknown as { depthTexture?: unknown };
+  if ('depthTexture' in p) p.depthTexture = null;
+  pass.dispose();
 }
 
 const STORAGE_KEY = 'hs.renderScale.v1';
@@ -393,7 +434,10 @@ export class Renderer {
   }
 
   private buildPasses(): void {
+    // Free the old chain's render targets (a quality change at runtime would otherwise leak them).
+    const old = [...this.composer.passes];
     this.composer.removeAllPasses();
+    for (const pass of old) disposePass(pass);
     const q = this.post.quality;
     const tier = TIERS[q];
     const camera = this.camera;
@@ -419,7 +463,7 @@ export class Renderer {
         transparencyAware: false,
         gammaCorrection: false,
       });
-      this.composer.addPass(ao);
+      this.composer.addPass(compositeInPlace(ao));
     }
     // After AO (which multiplies into the colour), before anything that blurs or spreads it.
     this.composer.addPass(sanitizePass());

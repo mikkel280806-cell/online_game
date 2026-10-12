@@ -1,7 +1,7 @@
 // Ground meshes built from the precomputed grids (grid.ts). Normals come from central
 // differences of the height grids, not from the triangles, so lighting stays smooth.
 
-import { BufferAttribute, BufferGeometry } from 'three';
+import { Box3, BufferAttribute, BufferGeometry, Sphere, Vector3 } from 'three';
 import { NEAR_CELLS, NEAR_HALF, NEAR_STEP, NEAR_VERTS, POLAR_RINGS, POLAR_SEG, type TerrainGrid } from './grid';
 
 /** The detailed square around the outpost and play area. Diagonal v00-v11 (see grid.nearSurface). */
@@ -53,6 +53,53 @@ export function buildNearGeometry(grid: TerrainGrid): BufferGeometry {
   g.computeBoundingSphere();
   g.computeBoundingBox();
   return g;
+}
+
+/**
+ * The near ground split into tiles x tiles chunks that share one set of vertex buffers (only
+ * the index differs), so the camera draws just the chunks in view. `stride` > 1 skips vertices
+ * (profiling the cost of the mesh density).
+ */
+export function buildNearChunks(full: BufferGeometry, tiles: number, stride = 1): BufferGeometry[] {
+  const N = NEAR_VERTS;
+  const cells = Math.floor(NEAR_CELLS / stride);
+  const pos = full.getAttribute('position') as BufferAttribute;
+  const out: BufferGeometry[] = [];
+  for (let tj = 0; tj < tiles; tj++) {
+    for (let ti = 0; ti < tiles; ti++) {
+      const j0 = Math.floor((tj * cells) / tiles);
+      const j1 = Math.floor(((tj + 1) * cells) / tiles);
+      const i0 = Math.floor((ti * cells) / tiles);
+      const i1 = Math.floor(((ti + 1) * cells) / tiles);
+      const index = new Uint32Array((j1 - j0) * (i1 - i0) * 6);
+      const box = new Box3();
+      const v = new Vector3();
+      let o = 0;
+      for (let j = j0; j < j1; j++) {
+        for (let i = i0; i < i1; i++) {
+          const v00 = j * stride * N + i * stride;
+          const v10 = v00 + stride;
+          const v01 = v00 + stride * N;
+          const v11 = v01 + stride;
+          index[o++] = v00;
+          index[o++] = v01;
+          index[o++] = v11;
+          index[o++] = v00;
+          index[o++] = v11;
+          index[o++] = v10;
+          box.expandByPoint(v.fromBufferAttribute(pos, v00)).expandByPoint(v.fromBufferAttribute(pos, v11));
+          box.expandByPoint(v.fromBufferAttribute(pos, v10)).expandByPoint(v.fromBufferAttribute(pos, v01));
+        }
+      }
+      const g = new BufferGeometry();
+      for (const name of ['position', 'normal', 'aTerrain']) g.setAttribute(name, full.getAttribute(name));
+      g.setIndex(new BufferAttribute(index, 1));
+      g.boundingBox = box;
+      g.boundingSphere = box.getBoundingSphere(new Sphere());
+      out.push(g);
+    }
+  }
+  return out;
 }
 
 /**
