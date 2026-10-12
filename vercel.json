@@ -6,7 +6,13 @@
   "headers": [
     {
       "source": "/assets/(.*)",
-      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
     }
-  ]
+  ],
+  "ignoreCommand": "git log -1 --pretty=%B | grep -q '\\[wip\\]'"
 }
