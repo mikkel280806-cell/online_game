@@ -75,6 +75,7 @@ if (scale > 0) renderer.setScaleCap(Math.max(0.25, Math.min(2, scale)));
 await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 const world = createWorld(renderer.gl, camera, quality);
 rig.groundAt = world.heightAt;
+rig.setObstacles([world.props.group]);
 rig.attach(canvas);
 renderer.setScene(world.scene);
 const toneMap = params.get('tm');

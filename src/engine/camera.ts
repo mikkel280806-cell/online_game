@@ -1,4 +1,5 @@
-import { MathUtils, PerspectiveCamera, Vector3 } from 'three';
+import { InstancedMesh, MathUtils, Mesh, PerspectiveCamera, Raycaster, SkinnedMesh, Vector3, type Object3D } from 'three';
+import { acceleratedRaycast, MeshBVH } from 'three-mesh-bvh';
 import type { Input } from './input';
 
 export const damp = (current: number, target: number, lambda: number, dt: number) =>
@@ -18,6 +19,11 @@ const MIN_DIST = 4;
 const MAX_DIST = 45;
 
 const look = new Vector3();
+const dir = new Vector3();
+const ray = new Raycaster();
+(ray as Raycaster & { firstHitOnly?: boolean }).firstHitOnly = true;
+/** Keep this far in front of whatever blocks the view (m). */
+const CLEARANCE = 0.4;
 
 /**
  * Third-person camera that orbits the player: drag / two-finger swipe / Q-E to turn,
@@ -27,6 +33,7 @@ export class CameraRig {
   readonly camera: PerspectiveCamera;
   /** Ground height lookup so the camera never dips under the terrain. */
   groundAt: (x: number, z: number) => number = () => 0;
+  private obstacles: Mesh[] = [];
 
   // Follow camera: yaw 0 = behind the player looking north (-Z).
   private yaw = 0;
@@ -35,6 +42,8 @@ export class CameraRig {
   private goalYaw = 0;
   private goalPitch = 0.5;
   private goalDistance = 13;
+  /** Distance the camera may currently use: snaps in when blocked, eases back out. */
+  private clipDistance = Infinity;
   private focus = new Vector3();
   private hasFocus = false;
 
@@ -84,6 +93,26 @@ export class CameraRig {
     );
   }
 
+  /**
+   * Solid scenery the camera must stay in front of: it pulls in instead of looking through walls.
+   * Builds a bounding-volume tree per mesh once, so a ray costs microseconds, not a scan of
+   * every triangle of the merged buildings.
+   */
+  setObstacles(roots: Object3D[]): void {
+    this.obstacles = [];
+    for (const root of roots) {
+      root.traverse((o) => {
+        if (!(o instanceof Mesh) || o instanceof InstancedMesh || o instanceof SkinnedMesh) return;
+        const m = Array.isArray(o.material) ? o.material[0] : o.material;
+        // See-through effects (light cones, glows) don't block the view.
+        if (m?.transparent || !o.geometry.attributes.position) return;
+        o.geometry.boundsTree ??= new MeshBVH(o.geometry);
+        o.raycast = acceleratedRaycast;
+        this.obstacles.push(o);
+      });
+    }
+  }
+
   setAspect(aspect: number): void {
     this.camera.aspect = aspect;
     this.camera.updateProjectionMatrix();
@@ -124,7 +153,7 @@ export class CameraRig {
       this.focus.y = damp(this.focus.y, target.y, 6, dt);
       this.focus.z = damp(this.focus.z, target.z, 9, dt);
     }
-    this.applyFollow();
+    this.applyFollow(dt);
   }
 
   /** Slow cinematic orbit used behind the title screen. */
@@ -143,7 +172,7 @@ export class CameraRig {
     this.goalDistance = MathUtils.clamp(this.goalDistance * factor, MIN_DIST, MAX_DIST);
   }
 
-  private applyFollow(): void {
+  private applyFollow(dt = 0): void {
     const cp = Math.cos(this.pitch);
     const c = this.camera.position;
     c.set(
@@ -152,6 +181,24 @@ export class CameraRig {
       this.focus.z + Math.cos(this.yaw) * cp * this.distance,
     );
     c.y = Math.max(c.y, this.groundAt(c.x, c.z) + 1.2);
-    this.camera.lookAt(look.set(this.focus.x, this.focus.y + 1.3, this.focus.z));
+    look.set(this.focus.x, this.focus.y + 1.3, this.focus.z);
+    this.avoidObstacles(c, dt);
+    this.camera.lookAt(look);
+  }
+
+  /** Pull the camera in along the view line when a wall, hull or crate is in the way. */
+  private avoidObstacles(c: Vector3, dt: number): void {
+    if (this.obstacles.length === 0) return;
+    dir.subVectors(c, look);
+    const full = dir.length();
+    if (full < 1e-3) return;
+    dir.divideScalar(full);
+    ray.set(look, dir);
+    ray.far = full + CLEARANCE;
+    const hit = ray.intersectObjects(this.obstacles, false)[0];
+    const allowed = hit ? Math.max(0.6, hit.distance - CLEARANCE) : full;
+    // Snap in at once (never show the inside of a wall); ease back out when it clears.
+    this.clipDistance = allowed < this.clipDistance || dt === 0 ? allowed : damp(this.clipDistance, allowed, 3, dt);
+    if (this.clipDistance < full) c.copy(look).addScaledVector(dir, this.clipDistance);
   }
 }

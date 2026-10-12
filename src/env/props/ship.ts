@@ -243,14 +243,13 @@ export function buildShip(asm: Asm, shell: PartBuilder, glass: PartBuilder, glow
       const a = (i / 14) * Math.PI * 2;
       nac.small(rbox(0.05, 0.46, 0.14, 0.01), { color: '#55585c', metal: 0.9, rough: 0.3, panel: 0 }, T(Math.cos(a) * 0.46, Math.sin(a) * 0.46, WREN.nacelleZ0 + 0.3, 0.35, 0, a - Math.PI / 2));
     }
-    // Nozzle: bell, inner glowing core (residual heat), outer petals ring.
+    // Nozzle: bell, cold inner cone (engines off), outer petals ring.
     const nz = WREN.nacelleZ1;
     // (Lathe +Y maps to ship +Z, i.e. aft, under this rotation.)
     nac.hard(lathe([[0.76, 0], [0.74, 0.25], [0.7, 0.62], [0.66, 0.66], [0.6, 0.6], [0.58, 0.1], [0.6, 0], [0.76, 0]], 32), { color: '#3a3532', metal: 0.85, rough: 0.35, panel: 0.2 }, T(0, 0, nz - 0.08, Math.PI / 2, 0, 0));
-    nac.small(lathe([[0, -0.04], [0.56, -0.04], [0.56, 0.0], [0.35, 0.12], [0.0, 0.2]], 24), { color: '#e8561c', rough: 0.6, panel: 0, glow: 0.45 }, T(0, 0, nz + 0.12, Math.PI / 2, 0, 0)); // residual heat: a dull ember
+    nac.small(lathe([[0, -0.04], [0.56, -0.04], [0.56, 0.0], [0.35, 0.12], [0.0, 0.2]], 24), { color: '#2a2622', metal: 0.75, rough: 0.5, panel: 0 }, T(0, 0, nz + 0.12, Math.PI / 2, 0, 0)); // cold turbine cone: the ship is parked
     // Aft trim ring closing the slot between the nacelle skin and the bell.
     nac.hard(lathe([[0.62, -0.16], [0.84, -0.16], [0.86, -0.12], [0.86, 0.04], [0.82, 0.08], [0.62, 0.08], [0.62, -0.16]], 32), { color: '#2e2a28', metal: 0.8, rough: 0.4, panel: 0.2 }, T(0, 0, nz, Math.PI / 2, 0, 0));
-    glows.add(nac.pt(0, 0, nz + 0.45), '#ff6a2a', 0.9, 1.2, GlowMode.Steady, 0, 2);
     for (let i = 0; i < 16; i++) {
       const a = (i / 16) * Math.PI * 2;
       nac.small(rbox(0.12, 0.04, 0.55, 0.01), { color: '#2e2a28', metal: 0.85, rough: 0.35, panel: 0 }, T(Math.cos(a) * 0.75, Math.sin(a) * 0.75, nz + 0.2, 0, 0, a).multiply(T(0, 0, 0, -0.12, 0, 0)));

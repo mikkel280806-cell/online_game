@@ -92,7 +92,8 @@ export const TIERS: Record<Quality, Tier> = {
     maxScale: 1,
     minScale: 0.55,
     ao: null,
-    godRays: null,
+    // Cheap rays: without them the sun is a hard-edged disc at low resolution.
+    godRays: { resolutionScale: 0.3, samples: 20 },
     smaa: SMAAPreset.MEDIUM,
     grain: false,
   },
