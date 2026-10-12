@@ -9,7 +9,12 @@ Each folder has one owner (see PLAN.md §5). A module only imports another modul
 | Folder | Owns | May import |
 |---|---|---|
 | `src/engine/` | Renderer, post-processing, game loop, input, camera | `three`, `postprocessing` |
-| `src/game/` | World content, players, gameplay, state sync | `engine`, `net`, `config` |
+| `src/game/` | World assembly, players, bot, gameplay, state sync | `engine`, `env`, `characters`, `net`, `config` |
+| `src/env/` | The environment: `layout.ts` (shared constants), sky, atmosphere, lighting, `bake.ts`, `shaders/` | `three`, `postprocessing` |
+| `src/env/terrain/` | Moon terrain, ground materials, boulders, pebbles. Contract: `Terrain` in `env/types.ts` | `env/*` |
+| `src/env/props/` | Outpost, landing pad, dropship, Meridian wreck, debris. Contract: `Props` in `env/types.ts` | `env/*`, `game/collision` |
+| `src/characters/` | The astronaut model and its procedural animation (`Avatar`) | `engine/camera` (damp), `game/roles`, `env/*` |
+| `src/lookdev/` | Look-dev harness: render one module from fixed cameras (`scripts/lookdev.mjs`) | anything |
 | `src/net/` | Rooms, signaling, WebRTC, relay fallback, RTT | `@supabase/supabase-js`, `config`, `services` |
 | `src/ui/` | DOM overlays: lobby, HUD, perf overlay, feedback box | `engine`, `net`, `telemetry` |
 | `src/telemetry/` | Perf samples, error reports, feedback uploads | `services` |
@@ -17,6 +22,10 @@ Each folder has one owner (see PLAN.md §5). A module only imports another modul
 | `src/config.ts` | Public constants | nothing |
 
 `src/main.ts` wires everything together.
+
+## Look and feel
+
+See `docs/ART_BIBLE.md`. World layout constants (sun direction, outpost, wreck, play radius) live in `src/env/layout.ts`.
 
 ## Net layer contract
 

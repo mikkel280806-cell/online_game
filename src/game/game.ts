@@ -3,7 +3,9 @@ import { NET_INTERP_DELAY_MS, NET_SEND_HZ } from '../config';
 import type { Input } from '../engine/input';
 import type { NetMessage, PeerRole, Session, SessionStatus } from '../net';
 import { SnapshotBuffer } from './interp';
-import { Avatar, LocalPlayer, type RoleId } from './player';
+import { Avatar } from '../characters';
+import { LocalPlayer } from './player';
+import type { RoleId } from './roles';
 import type { World } from './world';
 
 export const roleFor = (peer: PeerRole | 'solo'): RoleId => (peer === 'guest' ? 'tether' : 'vanguard');

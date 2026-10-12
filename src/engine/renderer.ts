@@ -1,7 +1,7 @@
 import {
   HalfFloatType,
   NoToneMapping,
-  PCFSoftShadowMap,
+  PCFShadowMap,
   SRGBColorSpace,
   Scene,
   WebGLRenderer,
@@ -57,7 +57,7 @@ export class Renderer {
     this.gl.outputColorSpace = SRGBColorSpace;
     this.gl.toneMapping = NoToneMapping; // done in post
     this.gl.shadowMap.enabled = true;
-    this.gl.shadowMap.type = PCFSoftShadowMap;
+    this.gl.shadowMap.type = PCFShadowMap;
     this.gl.info.autoReset = false;
 
     this.pixelRatio = Math.min(window.devicePixelRatio, QUALITY_MAX_PIXEL_RATIO[this.quality]);

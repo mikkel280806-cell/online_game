@@ -1,6 +1,6 @@
 import { Vector3, type Camera } from 'three';
 import type { GameDebugState } from '../game/game';
-import { ROLES } from '../game/player';
+import { ROLES } from '../game/roles';
 import { h } from './dom';
 
 const PHASE_TEXT: Record<GameDebugState['phase'], string> = {
