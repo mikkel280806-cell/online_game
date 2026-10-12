@@ -12,6 +12,7 @@ A two-player co-op space adventure that runs in the browser. See [PLAN.md](PLAN.
 |---|---|
 | W A S D / arrows | Move (relative to the camera) |
 | Shift | Sprint |
+| F (hold) | Interact: force, hack, throw breakers |
 | Drag, two-finger swipe, Q / E | Turn the camera |
 | Scroll / pinch | Zoom |
 | B | Solo: add or dismiss the bot partner |

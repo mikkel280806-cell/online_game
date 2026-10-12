@@ -119,3 +119,34 @@ test.describe('over Supabase Realtime', () => {
     });
   }
 });
+
+test('solo: restart the beacon with the bot (both roles, then both breakers)', async ({ page }) => {
+  test.setTimeout(300_000);
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto(URL);
+  await page.getByTestId('solo').click();
+  await expect.poll(async () => (await state(page))?.phase, { timeout: 30_000 }).toBe('solo');
+  // The objective appears once the camera has flown in from the title view.
+  await expect(page.locator('.objective')).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('.objective-text')).toContainText('cabinet');
+  const teleport = (x: number, z: number) => page.evaluate(([x, z]) => (window as unknown as { __teleport: (x: number, z: number) => void }).__teleport(x, z), [x, z]);
+  const step = async () => (await state(page)).mission.step;
+
+  // Vanguard (us) forces the cabinet at the mast.
+  await teleport(-20.6, -0.3);
+  await expect(page.locator('.prompt-text')).toContainText('Hold F', { timeout: 20_000 });
+  await page.keyboard.down('KeyF');
+  await expect.poll(step, { timeout: 30_000 }).toBe(1);
+  await page.keyboard.up('KeyF');
+
+  // The bot (Tether) walks to the pad pedestal and reroutes power on its own.
+  await expect.poll(step, { timeout: 120_000 }).toBe(2);
+
+  // Breakers: we hold the one at the mast, the bot takes the pedestal.
+  await page.keyboard.down('KeyF');
+  await expect.poll(async () => (await state(page)).mission.done, { timeout: 120_000 }).toBe(true);
+  await page.keyboard.up('KeyF');
+  await expect(page.locator('.objective-text')).toContainText('Beacon online');
+  expect(errors).toEqual([]);
+});

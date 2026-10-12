@@ -3,7 +3,7 @@ import { mulberry32 } from './random';
 import { findPath, segmentClear, type Point } from './pathfinding';
 import { LocalPlayer, type Ground, type PlayerControl } from './player';
 
-type BotState = 'follow' | 'idle' | 'explore';
+type BotState = 'follow' | 'idle' | 'explore' | 'task';
 
 const FOLLOW_START = 6.5; // start walking when the leader is this far away
 const FOLLOW_STOP = 3.2; // stop when this close to the formation spot
@@ -28,6 +28,11 @@ export class Bot {
   private pathAge = 0;
   private ground: Ground | null = null;
 
+  /** A spot to go and work (a mission station): overrides following. */
+  task: { x: number; z: number } | null = null;
+  /** Holding the interact key at the task spot. */
+  holding = false;
+
   constructor(readonly player: LocalPlayer) {}
 
   update(dt: number, leader: LocalPlayer, ground: Ground): void {
@@ -45,7 +50,22 @@ export class Bot {
     );
     const toLeader = Math.hypot(leader.position.x - this.player.position.x, leader.position.z - this.player.position.z);
 
+    if (this.task && this.state !== 'task') this.enter('task');
+    this.holding = false;
     switch (this.state) {
+      case 'task': {
+        if (!this.task) {
+          this.enter('idle');
+          break;
+        }
+        const goal = this.goal.set(this.task.x, 0, this.task.z);
+        const d = this.distanceTo(goal);
+        // Stop at arm's length; the station's own collider keeps us from walking into it.
+        if (d > 1.6) this.steer(goal, d > 8);
+        else this.steer(null, false);
+        this.holding = d < 2.2;
+        break;
+      }
       case 'idle':
         this.steer(null, false);
         if (toLeader > FOLLOW_START) this.enter('follow');

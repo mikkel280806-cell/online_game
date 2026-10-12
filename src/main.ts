@@ -13,6 +13,8 @@ import { LANDING_PAD, PLANET_DIR, SUN_DIR, WRECK } from './env/layout';
 import { Game, roleFor, type GameDebugState } from './game/game';
 import { NO_CONTROL, type PlayerControl } from './game/player';
 import { ROLES } from './game/roles';
+import { MissionFx } from './game/missionFx';
+import { ObjectiveUi } from './ui/objective';
 import { createWorld, type WorldDebug } from './game/world';
 import { createRoom, joinRoom, type NetOptions, type Session } from './net';
 import { FeedbackBox } from './ui/feedback';
@@ -100,6 +102,8 @@ const input = new Input();
 const game = new Game(world);
 const stats = new FrameStats();
 const hud = new Hud(uiRoot);
+const objective = new ObjectiveUi(uiRoot);
+const missionFx = new MissionFx(world.scene, world.heightAt);
 const perf = new PerfOverlay(uiRoot);
 
 // ---------- Screenshot capture (feedback box) ----------
@@ -219,6 +223,7 @@ function playerControl(): PlayerControl {
     x: rx * a.x + fx * a.y,
     z: rz * a.x + fz * a.y,
     sprint: input.isDown('ShiftLeft') || input.isDown('ShiftRight'),
+    act: input.isDown('KeyF'),
   };
 }
 
@@ -249,10 +254,12 @@ const loop = new Loop(({ dt, time, frameMs }) => {
   game.present(stepper.alpha, dt, now);
   updateCamera(dt, time);
   world.update(time, camera);
+  missionFx.update(time, game.mission);
 
   const state = game.debugState();
   window.__hs = state;
   if (mode !== 'menu') hud.update(state);
+  objective.update(mode === 'play', game.mission, game.localRole, game.local?.position ?? null);
   const myRole = game.localRole;
   if (myRole && game.local && mode !== 'menu') hud.label('me', ROLES[myRole].name, ROLES[myRole].css, game.local.display, camera);
   const partner = game.partner();
@@ -573,6 +580,7 @@ async function diagnostics(): Promise<Record<string, unknown>> {
   };
 }
 window.__diag = diagnostics;
+(window as unknown as { __teleport: (x: number, z: number) => void }).__teleport = (x, z) => game.teleport(x, z);
 (window as unknown as { __setScale: (s: number) => void }).__setScale = (s: number) => renderer.setScaleCap(s);
 canvas.addEventListener('webglcontextlost', () => reportError('WebGL context lost'));
 

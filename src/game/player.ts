@@ -19,6 +19,8 @@ export interface PlayerControl {
   x: number;
   z: number;
   sprint: boolean;
+  /** Holding the interact key. */
+  act?: boolean;
 }
 
 export const NO_CONTROL: PlayerControl = { x: 0, z: 0, sprint: false };
@@ -87,6 +89,13 @@ export class LocalPlayer {
       const target = Math.atan2(this.velocity.x, this.velocity.z);
       this.yaw = lerpAngle(this.yaw, target, 1 - Math.exp(-14 * dt));
     }
+  }
+
+  /** Move instantly (tests, respawns). */
+  teleport(x: number, z: number, ground: Ground): void {
+    this.position.set(x, ground.heightAt(x, z), z);
+    this.velocity.set(0, 0, 0);
+    this.prev.copy(this.position);
   }
 
   /**

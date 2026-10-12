@@ -3,6 +3,7 @@ import { NET_INTERP_DELAY_MS, NET_SEND_HZ } from '../config';
 import { Avatar } from '../characters';
 import type { NetMessage, PeerRole, Session, SessionStatus } from '../net';
 import { Bot } from './bot';
+import { Mission, STATIONS, type Actor } from './mission';
 import { SnapshotBuffer } from './interp';
 import { LocalPlayer, type Ground, type PlayerControl } from './player';
 import type { RoleId } from './roles';
@@ -30,6 +31,7 @@ export interface GameDebugState {
   remote: { x: number; z: number } | null;
   remoteSnapshots: number;
   bot: { x: number; z: number; state: string } | null;
+  mission: { step: number; progress: number; done: boolean };
 }
 
 /** Owns the players (local, remote partner or bot) and keeps the remote one in sync. */
@@ -38,6 +40,9 @@ export class Game {
   remote: Remote | null = null;
   bot: Bot | null = null;
   session: Session | null = null;
+  readonly mission = new Mission();
+  private localAct = false;
+  private remoteAct = false;
   private sendAccum = 0;
   private unsubs: (() => void)[] = [];
   private readonly ground: Ground;
@@ -100,11 +105,27 @@ export class Game {
     this.remote = null;
   }
 
+  /** Move the local player (tests and debugging). */
+  teleport(x: number, z: number): void {
+    this.local?.teleport(x, z, this.ground);
+  }
+
+  /** The host (or a solo player) owns the mission; a guest shows the host's state. */
+  get authority(): boolean {
+    return !this.session || this.session.role === 'host';
+  }
+
   update(dt: number, nowMs: number, control: PlayerControl): void {
     if (this.local) {
+      this.localAct = !!control.act;
       this.local.update(control, dt, this.ground);
       this.sendState(dt, nowMs);
-      this.bot?.update(dt, this.local, this.ground);
+      if (this.bot) {
+        const st = this.mission.botStation(this.bot.player.avatar.role, this.local.position);
+        this.bot.task = st ? STATIONS[st] : null;
+        this.bot.update(dt, this.local, this.ground);
+      }
+      if (this.authority) this.mission.update(dt, this.actors());
     }
   }
 
@@ -125,6 +146,15 @@ export class Game {
     }
   }
 
+  private actors(): Actor[] {
+    const list: Actor[] = [];
+    const add = (role: RoleId, p: Vector3, act: boolean) => list.push({ role, x: p.x, z: p.z, act });
+    if (this.local) add(this.local.avatar.role, this.local.position, this.localAct);
+    if (this.bot) add(this.bot.player.avatar.role, this.bot.player.position, this.bot.holding);
+    if (this.remote?.visible) add(this.remote.avatar.role, this.remote.position, this.remoteAct);
+    return list;
+  }
+
   /** The partner, whether a person or the bot. */
   partner(): { role: RoleId; position: Vector3; isBot: boolean } | null {
     if (this.remote?.visible) return { role: this.remote.avatar.role, position: this.remote.position, isBot: false };
@@ -143,6 +173,7 @@ export class Game {
       remote: this.remote?.visible ? { x: round(this.remote.position.x), z: round(this.remote.position.z) } : null,
       remoteSnapshots: this.remote?.buffer.size ?? 0,
       bot: this.bot ? { x: round(this.bot.player.position.x), z: round(this.bot.player.position.z), state: this.bot.state } : null,
+      mission: { step: this.mission.step, progress: round(this.mission.progress), done: this.mission.done },
     };
   }
 
@@ -159,6 +190,9 @@ export class Game {
       z: round(p.position.z),
       ry: round(p.yaw),
       sp: round(p.speed),
+      act: this.localAct ? 1 : 0,
+      // The host's mission state rides along; a lost packet is replaced 50 ms later.
+      ...(this.authority ? { ms: this.mission.step, mp: round(this.mission.progress) } : {}),
     });
   }
 
@@ -179,6 +213,8 @@ export class Game {
       };
     }
     this.remote.visible = true;
+    this.remoteAct = msg.act === 1;
+    if (!this.authority && typeof msg.ms === 'number' && typeof msg.mp === 'number') this.mission.apply(msg.ms, msg.mp);
     this.remote.buffer.push({ ts, x, z, ry, speed: sp }, performance.now());
   }
 
