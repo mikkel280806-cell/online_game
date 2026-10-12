@@ -2,6 +2,7 @@ import {
   BackSide,
   Color,
   Group,
+  LessEqualDepth,
   Mesh,
   MeshBasicMaterial,
   ShaderMaterial,
@@ -22,10 +23,13 @@ const PLANET_AXIS = new Vector3(0.28, 0.93, 0.24).normalize();
 
 const SKY_RADIUS = 9000;
 
+// The dome is drawn after all opaque geometry, pinned to the far plane (z = w) and depth-tested,
+// so its (expensive: planet bands, sun granulation, stars) shader runs only where sky shows.
 function skyMaterial(): ShaderMaterial {
   return new ShaderMaterial({
     side: BackSide,
-    depthTest: false,
+    depthTest: true,
+    depthFunc: LessEqualDepth,
     depthWrite: false,
     fog: false,
     uniforms: {
@@ -41,6 +45,7 @@ function skyMaterial(): ShaderMaterial {
       void main() {
         vDir = position;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        gl_Position.z = gl_Position.w; // on the far plane, behind everything
       }
     `,
     fragmentShader: /* glsl */ `
@@ -227,7 +232,8 @@ export function createSky(): Sky {
   const group = new Group();
   const material = skyMaterial();
   const dome = new Mesh(new SphereGeometry(SKY_RADIUS, 64, 32), material);
-  dome.renderOrder = -1000;
+  // Last among opaque objects (see skyMaterial); transparent ones (sun disc, glows) follow.
+  dome.renderOrder = 1000;
   dome.frustumCulled = false;
   group.add(dome);
 

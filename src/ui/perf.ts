@@ -1,4 +1,4 @@
-import type { WebGLRenderer } from 'three';
+import type { Renderer } from '../engine/renderer';
 import type { FrameStats } from '../engine/stats';
 import type { GameDebugState } from '../game/game';
 import { h } from './dom';
@@ -19,14 +19,16 @@ export class PerfOverlay {
     this.el.classList.toggle('hidden', !this.visible);
   }
 
-  update(nowMs: number, stats: FrameStats, gl: WebGLRenderer, pixelRatio: number, quality: string, state: GameDebugState): void {
+  update(nowMs: number, stats: FrameStats, renderer: Renderer, state: GameDebugState): void {
     if (!this.visible || nowMs < this.nextUpdate) return;
     this.nextUpdate = nowMs + 250;
-    const info = gl.info.render;
+    const info = renderer.gl.info.render;
+    const drs = renderer.resolutionInfo();
     this.el.textContent = [
       `fps      ${stats.fps().toFixed(0)}`,
       `frame    ${stats.avgMs().toFixed(1)} ms  p95 ${stats.p95Ms().toFixed(1)}`,
-      `scale    ${pixelRatio.toFixed(2)}x  ${quality}`,
+      `scale    ${renderer.getPixelRatio().toFixed(2)}x  ${renderer.getQuality()}  (${drs.min}-${drs.max})`,
+      `drs      ${drs.reason || '-'}`,
       `draws    ${info.calls}`,
       `tris     ${(info.triangles / 1000).toFixed(0)}k`,
       `net      ${state.transport ?? '-'}  ${state.rttMs !== null ? `${state.rttMs.toFixed(0)} ms` : ''}`,

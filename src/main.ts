@@ -13,7 +13,7 @@ import { LANDING_PAD, PLANET_DIR, SUN_DIR, WRECK } from './env/layout';
 import { Game, roleFor, type GameDebugState } from './game/game';
 import { NO_CONTROL, type PlayerControl } from './game/player';
 import { ROLES } from './game/roles';
-import { createWorld } from './game/world';
+import { createWorld, type WorldDebug } from './game/world';
 import { createRoom, joinRoom, type NetOptions, type Session } from './net';
 import { FeedbackBox } from './ui/feedback';
 import { Hud } from './ui/hud';
@@ -38,6 +38,8 @@ declare global {
     __shotReady?: boolean;
     /** Rendering health report (used by the smoke test and sent to telemetry). */
     __diag?: () => Promise<Record<string, unknown>>;
+    /** Photo-mode profiler (?shot=<name>&prof=1), driven by scripts/profile.mjs. */
+    __prof?: Profiler;
   }
 }
 
@@ -89,6 +91,8 @@ renderer.onResize = (w, h) => {
   rig.setAspect(w / h);
   world.lighting.updateFrustums();
 };
+// Dynamic resolution stepped the quality tier down: cheaper shadow cascades too.
+renderer.onQualityChange = (q) => world.setQuality(q);
 renderer.resize();
 
 const input = new Input();
@@ -232,6 +236,9 @@ function updateCamera(dt: number, time: number): void {
   }
 }
 
+/** Main-thread time of the previous frame (game + render submission), for dynamic resolution. */
+let lastCpuMs: number | undefined;
+
 const loop = new Loop(({ dt, time, frameMs }) => {
   const now = performance.now();
   stats.push(frameMs);
@@ -255,10 +262,11 @@ const loop = new Loop(({ dt, time, frameMs }) => {
     camera,
   );
 
-  renderer.render(dt, frameMs);
+  renderer.render(dt, frameMs, lastCpuMs);
   fulfilCapture();
-  perf.update(now, stats, renderer.gl, renderer.getPixelRatio(), renderer.getQuality(), state);
+  perf.update(now, stats, renderer, state);
   input.endFrame();
+  lastCpuMs = performance.now() - now;
 
   if (mode !== 'menu') {
     perfTimer += dt;
@@ -285,8 +293,10 @@ async function runShot(name: string): Promise<void> {
   renderer.setDynamicResolution(false);
   const T = 12.5; // fixed time so animated shaders look the same every run
   lobby.el.classList.toggle('hidden', name !== 'title');
+  const avatars: Avatar[] = [];
   const place = (role: 'vanguard' | 'tether', x: number, z: number, yaw: number, speed: number) => {
     const a = new Avatar(role);
+    avatars.push(a);
     const p = new Vector3(x, world.heightAt(x, z), z);
     // Advance the procedural animation into a natural mid-stride pose.
     for (let i = 0; i < 40; i++) a.animate(p, yaw, speed, 1 / 60);
@@ -340,6 +350,11 @@ async function runShot(name: string): Promise<void> {
   }
   const gl = renderer.gl.getContext();
   const pixel = new Uint8Array(4);
+  if (params.get('prof') === '1') {
+    window.__prof = createProfiler(T, avatars);
+    window.__shotReady = true;
+    return;
+  }
   for (let i = 0; i < 6; i++) {
     world.update(T + i / 60, camera);
     renderer.render(1 / 60, 16);
@@ -350,6 +365,152 @@ async function runShot(name: string): Promise<void> {
   const info = renderer.gl.info.render;
   console.info(`[shot] ${name} draws=${info.calls} triangles=${info.triangles}`);
   window.__shotReady = true;
+}
+
+// ---------- Profiler (photo mode) ----------
+
+/** Everything scripts/profile.mjs can switch. Unset fields take the game's defaults. */
+interface ProfSpec extends WorldDebug {
+  ao?: boolean;
+  rays?: boolean;
+  bloom?: boolean;
+  grain?: boolean;
+  smaa?: boolean;
+  post?: 'full' | 'min';
+  scale?: number;
+  chars?: boolean;
+}
+
+interface ProfResult {
+  /** Wall time per frame, GPU work included (render + 1-pixel readback). */
+  ms: number[];
+  /** CPU time per frame up to the end of command submission. */
+  cpuMs: number[];
+  draws: number;
+  triangles: number;
+  width: number;
+  height: number;
+}
+
+interface Profiler {
+  set(spec: ProfSpec): Promise<void>;
+  measure(frames: number, warm?: number): Promise<ProfResult>;
+  /** Triangles and draw calls per object for one frame, split into camera and shadow passes. */
+  breakdown(): Promise<Record<string, { tris: number; shadowTris: number; calls: number; shadowCalls: number }>>;
+}
+
+function createProfiler(T: number, avatars: Avatar[]): Profiler {
+  const gl = renderer.gl.getContext();
+  const pixel = new Uint8Array(4);
+  const defaults: Required<Omit<ProfSpec, 'cascades' | 'shadowSize' | 'scale'>> & Pick<ProfSpec, 'cascades' | 'shadowSize' | 'scale'> = {
+    ao: true, rays: true, bloom: true, grain: true, smaa: true, post: 'full', chars: true,
+    sky: true, props: true, terrainNear: true, terrainFar: true, rocks: true, pebbles: true,
+    terrainFlat: false, nearStride: 1, shadows: true,
+    cascades: world.lighting.shadowSettings.cascades, shadowSize: world.lighting.shadowSettings.size,
+    scale: renderer.getPixelRatio(),
+  };
+  let current = { ...defaults };
+  let frame = 0;
+  const step = async () => {
+    world.update(T + frame++ / 60, camera);
+    renderer.render(1 / 60, 16);
+  };
+  return {
+    async set(spec) {
+      const next = { ...defaults, ...spec };
+      const postKeys = ['ao', 'rays', 'bloom', 'grain', 'smaa', 'post'] as const;
+      if (postKeys.some((k) => next[k] !== current[k])) {
+        renderer.configurePost({
+          minimal: next.post === 'min',
+          ao: next.ao,
+          godRays: next.rays,
+          bloom: next.bloom,
+          grain: next.grain,
+          smaa: next.smaa,
+        });
+      }
+      if (next.scale !== current.scale) renderer.setScaleCap(next.scale!);
+      for (const a of avatars) a.root.visible = next.chars;
+      world.setDebug(next);
+      current = next;
+    },
+    async measure(frames, warm = 2) {
+      for (let i = 0; i < warm; i++) {
+        await step();
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+        await new Promise((r) => setTimeout(r, 0));
+      }
+      const ms: number[] = [];
+      const cpuMs: number[] = [];
+      for (let i = 0; i < frames; i++) {
+        const t0 = performance.now();
+        await step();
+        const t1 = performance.now();
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+        ms.push(performance.now() - t0);
+        cpuMs.push(t1 - t0);
+        await new Promise((r) => setTimeout(r, 0));
+      }
+      const info = renderer.gl.info.render;
+      return { ms, cpuMs, draws: info.calls, triangles: info.triangles, width: canvas.width, height: canvas.height };
+    },
+    async breakdown() {
+      type Row = { tris: number; shadowTris: number; calls: number; shadowCalls: number };
+      const rows: Record<string, Row> = {};
+      const r = renderer.gl as unknown as { renderBufferDirect: (...a: unknown[]) => void };
+      const orig = r.renderBufferDirect;
+      r.renderBufferDirect = function (cam, scn, geometry, material, object, group) {
+        const g = geometry as { index: { count: number } | null; attributes: { position: { count: number } }; drawRange: { count: number } };
+        const o = object as { name: string; count?: number; isInstancedMesh?: boolean; parent: { name: string } | null; isMesh?: boolean };
+        const n = Math.min(g.index ? g.index.count : g.attributes.position.count, g.drawRange.count) / 3;
+        const tris = n * (o.isInstancedMesh ? (o.count ?? 0) : 1);
+        const shadow = (cam as { isOrthographicCamera?: boolean }).isOrthographicCamera && o.isMesh && !(material as { isShaderMaterial?: boolean }).isShaderMaterial;
+        const key = o.name || `${o.parent?.name ?? '?'}/(unnamed)`;
+        const row = (rows[key] ??= { tris: 0, shadowTris: 0, calls: 0, shadowCalls: 0 });
+        if (shadow) {
+          row.shadowTris += tris;
+          row.shadowCalls++;
+        } else {
+          row.tris += tris;
+          row.calls++;
+        }
+        return orig.call(this, cam, scn, geometry, material, object, group);
+      };
+      try {
+        await step();
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+      } finally {
+        r.renderBufferDirect = orig;
+      }
+      return rows;
+    },
+  };
+}
+
+// ---------- Shader prewarm ----------
+
+/** Keeps the prewarm avatar's material (and so its compiled program) alive for the first real one. */
+let prewarmed: Avatar | null = null;
+
+/**
+ * Compile every material while the loading screen is up, instead of as things first come into
+ * view (each first sighting is a frame-time hitch). Includes an astronaut, who otherwise
+ * compiles at the moment play starts. Uses KHR_parallel_shader_compile where available.
+ */
+async function prewarmShaders(): Promise<void> {
+  const t0 = performance.now();
+  try {
+    Avatar.prewarm(renderer.gl);
+    prewarmed = new Avatar('vanguard');
+    prewarmed.root.position.copy(world.spawnPoints[0]);
+    world.add(prewarmed.root);
+    await renderer.gl.compileAsync(world.scene, camera);
+  } catch (e) {
+    console.warn('[prewarm]', e);
+  } finally {
+    prewarmed?.root.removeFromParent();
+  }
+  console.info(`[prewarm] shaders compiled in ${(performance.now() - t0).toFixed(0)} ms`);
 }
 
 // ---------- Diagnostics ----------
@@ -407,10 +568,11 @@ if (shot) {
   loading?.remove();
   void runShot(shot);
 } else {
+  await prewarmShaders();
   loop.run();
   // One health report per visit, once shaders have compiled and a few frames have run.
   setTimeout(() => void diagnostics().then(reportDiagnostics).catch(() => {}), 6000);
-  // Fade out once the first frames (and their shader compiles) are done.
+  // Fade out once the first frames (and the post-processing shader compiles) are done.
   requestAnimationFrame(() => requestAnimationFrame(() => {
     loading?.classList.add('done');
     setTimeout(() => loading?.remove(), 900);

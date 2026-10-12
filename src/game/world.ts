@@ -5,14 +5,14 @@ import { PLAY_RADIUS, SPAWN_POINTS } from '../env/layout';
 import { createLighting, type Lighting } from '../env/lighting';
 import { createProps, padSurfaceHeight } from '../env/props';
 import { createSky, type Sky } from '../env/sky';
-import { createTerrain } from '../env/terrain';
-import type { HeightFn, Props, Quality, Terrain } from '../env/types';
+import { createTerrain, type TerrainWithStats } from '../env/terrain';
+import type { HeightFn, Props, Quality } from '../env/types';
 import type { Bounds, Collider } from './collision';
 
 export interface World {
   scene: Scene;
   sky: Sky;
-  terrain: Terrain;
+  terrain: TerrainWithStats;
   props: Props;
   lighting: Lighting;
   heightAt: HeightFn;
@@ -22,6 +22,26 @@ export interface World {
   /** Register objects added after creation (e.g. characters) with the shadow system. */
   add(object: Object3D): void;
   update(time: number, camera: PerspectiveCamera): void;
+  /** Match the world's quality-dependent parts (shadow cascades) to the renderer's tier. */
+  setQuality(quality: Quality): void;
+  /** Profiling switches: hide parts of the world, cheapen shaders (scripts/profile.mjs). */
+  setDebug(opts: WorldDebug): void;
+}
+
+export interface WorldDebug {
+  sky?: boolean;
+  props?: boolean;
+  terrainNear?: boolean;
+  terrainFar?: boolean;
+  rocks?: boolean;
+  pebbles?: boolean;
+  /** Flat grey ground and rocks instead of the full terrain shader. */
+  terrainFlat?: boolean;
+  /** Near ground vertex stride (1 = full density). */
+  nearStride?: number;
+  shadows?: boolean;
+  cascades?: number;
+  shadowSize?: number;
 }
 
 /** Chapter 1: the moon Vigil, Survey Outpost Kestrel-7, and the Meridian on the horizon. */
@@ -67,6 +87,26 @@ export function createWorld(gl: WebGLRenderer, camera: PerspectiveCamera, qualit
       terrain.update(time, cam);
       props.update(time);
       lighting.update();
+    },
+    setQuality(q) {
+      lighting.setQuality(q);
+    },
+    setDebug(o) {
+      if (o.sky !== undefined) sky.group.visible = o.sky;
+      if (o.props !== undefined) props.group.visible = o.props;
+      if (o.terrainNear !== undefined) terrain.debug.setPartVisible('near', o.terrainNear);
+      if (o.terrainFar !== undefined) terrain.debug.setPartVisible('far', o.terrainFar);
+      if (o.rocks !== undefined) terrain.debug.setPartVisible('rocks', o.rocks);
+      if (o.pebbles !== undefined) terrain.debug.setPartVisible('pebbles', o.pebbles);
+      if (o.terrainFlat !== undefined) terrain.debug.setFlatShading(o.terrainFlat);
+      if (o.nearStride !== undefined) terrain.debug.setNearStride(o.nearStride);
+      if (o.shadows !== undefined) lighting.setShadowsEnabled(o.shadows);
+      if (o.cascades !== undefined || o.shadowSize !== undefined) {
+        lighting.configureShadows({
+          ...(o.cascades ? { cascades: o.cascades } : {}),
+          ...(o.shadowSize ? { size: o.shadowSize } : {}),
+        });
+      }
     },
   };
 }

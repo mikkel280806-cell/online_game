@@ -15,20 +15,38 @@ const PHASE_TEXT: Record<GameDebugState['phase'], string> = {
 
 const TRANSPORT_TEXT: Record<string, string> = { p2p: 'direct', relay: 'relay', local: 'local' };
 
-/** Room code, connection status and floating name tags. */
+/** A floating name tag. Remembers what it shows so a frame writes to the DOM only on change. */
+interface Label {
+  el: HTMLDivElement;
+  text: string;
+  color: string;
+  visible: boolean;
+  x: number;
+  y: number;
+}
+
+/**
+ * Room code, connection status and floating name tags.
+ * Called every frame, so it touches the DOM only when something changed: DOM writes trigger
+ * style and layout work in the browser, which shows up as frame-time spikes.
+ */
 export class Hud {
   readonly el: HTMLDivElement;
   private code: HTMLDivElement;
   private status: HTMLDivElement;
+  private statusText: Text;
   private role: HTMLDivElement;
-  private labels = new Map<string, HTMLDivElement>();
+  private labels = new Map<string, Label>();
   private toastEl: HTMLDivElement;
   private toastTimer = 0;
   private tmp = new Vector3();
+  private lastStatus = '';
+  private lastRole = '';
 
   constructor(private readonly root: HTMLElement) {
     this.code = h('div.code');
-    this.status = h('div.status');
+    this.statusText = document.createTextNode('');
+    this.status = h('div.status', {}, h('span.dot'), this.statusText);
     this.role = h('div');
     this.el = h('div.hud.panel.hidden', { 'data-testid': 'hud' }, this.code, this.role, this.status);
     this.toastEl = h('div.toast.panel.hidden');
@@ -43,9 +61,14 @@ export class Hud {
 
   update(state: GameDebugState): void {
     const detail = state.transport && state.phase === 'connected' ? ` (${TRANSPORT_TEXT[state.transport] ?? state.transport})` : '';
-    this.status.className = `status ${state.phase}`;
-    this.status.replaceChildren(h('span.dot'), PHASE_TEXT[state.phase] + detail);
-    if (state.role) {
+    const key = `${state.phase}|${detail}`;
+    if (key !== this.lastStatus) {
+      this.lastStatus = key;
+      this.status.className = `status ${state.phase}`;
+      this.statusText.data = PHASE_TEXT[state.phase] + detail;
+    }
+    if (state.role && state.role !== this.lastRole) {
+      this.lastRole = state.role;
       this.role.textContent = `You are the ${ROLES[state.role].name}`;
       this.role.style.color = ROLES[state.role].css;
     }
@@ -53,23 +76,33 @@ export class Hud {
 
   /** Place a name tag above a world position; hidden when `pos` is null. */
   label(id: string, text: string, color: string, pos: Vector3 | null, camera: Camera): void {
-    let el = this.labels.get(id);
-    if (!el) {
-      el = h('div.name-label');
+    let l = this.labels.get(id);
+    if (!l) {
+      const el = h('div.name-label.hidden');
       this.root.append(el);
-      this.labels.set(id, el);
+      l = { el, text: '', color: '', visible: false, x: NaN, y: NaN };
+      this.labels.set(id, l);
     }
-    if (!pos) {
-      el.classList.add('hidden');
-      return;
+    let visible = !!pos;
+    if (pos) {
+      this.tmp.copy(pos).setY(pos.y + 2.2).project(camera);
+      visible = this.tmp.z < 1;
     }
-    this.tmp.copy(pos).setY(pos.y + 2.2).project(camera);
-    const visible = this.tmp.z < 1;
-    el.classList.toggle('hidden', !visible);
-    el.textContent = text;
-    el.style.color = color;
-    el.style.left = `${((this.tmp.x + 1) / 2) * window.innerWidth}px`;
-    el.style.top = `${((1 - this.tmp.y) / 2) * window.innerHeight}px`;
+    if (visible !== l.visible) {
+      l.visible = visible;
+      l.el.classList.toggle('hidden', !visible);
+    }
+    if (!visible) return;
+    if (text !== l.text) l.el.textContent = l.text = text;
+    if (color !== l.color) l.el.style.color = l.color = color;
+    // Whole pixels, and a transform (compositor only) rather than left/top (layout).
+    const x = Math.round(((this.tmp.x + 1) / 2) * window.innerWidth);
+    const y = Math.round(((1 - this.tmp.y) / 2) * window.innerHeight);
+    if (x !== l.x || y !== l.y) {
+      l.x = x;
+      l.y = y;
+      l.el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
+    }
   }
 
   toast(text: string, ms = 2500): void {

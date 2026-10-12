@@ -1,5 +1,6 @@
 // Renders photo-mode shots of the game in headless Chromium (software GPU) and saves PNGs.
 // Usage: npm run shots [-- name1 name2 ...]   (expects `npm run preview` on :4173, or starts it)
+// Env: SHOTS_URL (another server, e.g. a second build), SHOTS_OUT (output folder, default shots/out).
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
@@ -7,7 +8,7 @@ import { mkdirSync } from 'node:fs';
 const ALL = ['title', 'play', 'vista', 'sun', 'planet', 'ship'];
 const names = process.argv.slice(2).length ? process.argv.slice(2) : ALL;
 const base = process.env.SHOTS_URL ?? 'http://localhost:4173';
-const outDir = 'shots/out';
+const outDir = process.env.SHOTS_OUT ?? 'shots/out';
 mkdirSync(outDir, { recursive: true });
 
 async function up(url) {

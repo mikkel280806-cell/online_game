@@ -8,11 +8,12 @@
 // - The far field reaches 10 km; keep the camera's far plane (or fog) beyond that.
 // - The group must stay at the origin, untransformed (heightAt and culling are in world space).
 
-import { Frustum, Group, Matrix4, Mesh, Vector3, type Camera } from 'three';
+import { BufferAttribute, Frustum, Group, Matrix4, Mesh, Vector3, type Camera } from 'three';
 import type { EnvContext, Terrain } from '../types';
 import { TerrainGrid } from './grid';
 import { TerrainModel } from './heightfield';
-import { createTerrainMaterial } from './material';
+import { createTerrainMaterial, setTerrainFlatShading } from './material';
+import { NEAR_CELLS, NEAR_VERTS } from './grid';
 import { buildNearGeometry, buildPolarGeometries } from './meshes';
 import { createRocks } from './rocks';
 import { computeSunShadow, createSunShadow, sunVisibilityAt, type SunShadowData } from './sunshadow';
@@ -41,6 +42,16 @@ export interface TerrainWithStats extends Terrain {
   stats: { buildMs: number; boulders: number; breakdown: string };
   /** The baked ground textures (e.g. to lower anisotropy on weak GPUs). */
   textures: TerrainTextures;
+  /** Profiling switches (scripts/profile.mjs). */
+  debug: TerrainDebug;
+}
+
+export interface TerrainDebug {
+  /** Flat grey instead of the full ground/rock shader. */
+  setFlatShading(on: boolean): void;
+  /** Draw the near ground with every n-th vertex (1 = full density). */
+  setNearStride(stride: number): void;
+  setPartVisible(part: 'near' | 'far' | 'rocks' | 'pebbles', on: boolean): void;
 }
 
 export function createTerrain(ctx: EnvContext): TerrainWithStats {
@@ -92,8 +103,47 @@ export function createTerrain(ctx: EnvContext): TerrainWithStats {
     `${rocks.count} boulders, ${rocks.colliders.length} colliders)`;
   console.info(`[terrain] ${breakdown}`);
 
+  const fullIndex = near.geometry.index!;
+  const strided = new Map<number, BufferAttribute>([[1, fullIndex]]);
+  const debug: TerrainDebug = {
+    setFlatShading: setTerrainFlatShading,
+    setNearStride(stride) {
+      let idx = strided.get(stride);
+      if (!idx) {
+        const n = Math.floor(NEAR_CELLS / stride);
+        const arr = new Uint32Array(n * n * 6);
+        let o = 0;
+        for (let j = 0; j < n; j++) {
+          for (let i = 0; i < n; i++) {
+            const v00 = j * stride * NEAR_VERTS + i * stride;
+            const v10 = v00 + stride;
+            const v01 = v00 + stride * NEAR_VERTS;
+            const v11 = v01 + stride;
+            arr.set([v00, v01, v11, v00, v11, v10], o);
+            o += 6;
+          }
+        }
+        idx = new BufferAttribute(arr, 1);
+        strided.set(stride, idx);
+      }
+      near.geometry.setIndex(idx);
+    },
+    setPartVisible(part, on) {
+      if (part === 'near') near.visible = on;
+      else if (part === 'far') farVisible = on;
+      else if (part === 'rocks') {
+        rocksVisible = on;
+        rocks.group.children.forEach((c) => c.name === 'terrain-boulders' && (c.visible = on));
+      }
+      else rocks.group.children.forEach((c) => c.name === 'terrain-pebbles' && (c.visible = on));
+    },
+  };
+  let farVisible = true;
+  let rocksVisible = true;
+
   return {
     group,
+    debug,
     heightAt: (x, z) => grid.heightAt(x, z),
     normalAt: (x: number, z: number, out: Vector3) => grid.normalAt(x, z, out) as Vector3,
     colliders: rocks.colliders,
@@ -104,8 +154,8 @@ export function createTerrain(ctx: EnvContext): TerrainWithStats {
       camera.updateMatrixWorld();
       projView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
       frustum.setFromProjectionMatrix(projView);
-      for (const m of farChunks) m.visible = frustum.intersectsBox(m.geometry.boundingBox!);
-      for (const m of rocks.farMeshes) m.visible = frustum.intersectsBox(m.boundingBox!);
+      for (const m of farChunks) m.visible = farVisible && frustum.intersectsBox(m.geometry.boundingBox!);
+      for (const m of rocks.farMeshes) m.visible = rocksVisible && frustum.intersectsBox(m.boundingBox!);
       rocks.update(camera);
     },
   };
