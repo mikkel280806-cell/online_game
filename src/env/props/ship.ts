@@ -247,7 +247,7 @@ export function buildShip(asm: Asm, shell: PartBuilder, glass: PartBuilder, glow
     const nz = WREN.nacelleZ1;
     // (Lathe +Y maps to ship +Z, i.e. aft, under this rotation.)
     nac.hard(lathe([[0.76, 0], [0.74, 0.25], [0.7, 0.62], [0.66, 0.66], [0.6, 0.6], [0.58, 0.1], [0.6, 0], [0.76, 0]], 32), { color: '#3a3532', metal: 0.85, rough: 0.35, panel: 0.2 }, T(0, 0, nz - 0.08, Math.PI / 2, 0, 0));
-    nac.small(lathe([[0, -0.04], [0.56, -0.04], [0.56, 0.0], [0.35, 0.12], [0.0, 0.2]], 24), { color: '#ff6a25', rough: 0.6, panel: 0, glow: 1.4 }, T(0, 0, nz + 0.12, Math.PI / 2, 0, 0));
+    nac.small(lathe([[0, -0.04], [0.56, -0.04], [0.56, 0.0], [0.35, 0.12], [0.0, 0.2]], 24), { color: '#e8561c', rough: 0.6, panel: 0, glow: 0.45 }, T(0, 0, nz + 0.12, Math.PI / 2, 0, 0)); // residual heat: a dull ember
     // Aft trim ring closing the slot between the nacelle skin and the bell.
     nac.hard(lathe([[0.62, -0.16], [0.84, -0.16], [0.86, -0.12], [0.86, 0.04], [0.82, 0.08], [0.62, 0.08], [0.62, -0.16]], 32), { color: '#2e2a28', metal: 0.8, rough: 0.4, panel: 0.2 }, T(0, 0, nz, Math.PI / 2, 0, 0));
     glows.add(nac.pt(0, 0, nz + 0.45), '#ff6a2a', 0.9, 1.2, GlowMode.Steady, 0, 2);
@@ -262,10 +262,11 @@ export function buildShip(asm: Asm, shell: PartBuilder, glass: PartBuilder, glow
     // Navigation light on the outboard side: red port, green starboard.
     const navCol = side < 0 ? '#ff2a1a' : '#2aff6a';
     nac.small(sphere(0.09, 10, 8), { color: navCol, rough: 0.2, panel: 0, glow: 3 }, T(side * 1.1, 0.15, 1.0));
-    glows.add(nac.pt(side * 1.2, 0.15, 1.0), navCol, 5, 0.45, GlowMode.Steady, 0, 1.5);
-    // "07" on the outboard nacelle flank, registration below.
-    addDecal(kit, atlas, 'N07', 0.95, '#2b2e33', W(T(nx + side * 1.1, ny + 0.38, 5.2, 0, side * Math.PI / 2, 0)));
-    addDecal(kit, atlas, 'REG', 2.6, '#2b2e33', W(T(nx + side * 1.095, ny - 0.15, 5.2, 0, side * Math.PI / 2, 0)));
+    glows.add(nac.pt(side * 1.2, 0.15, 1.0), navCol, 5, 0.45, GlowMode.Steady, 0, 1.5, nac.dir(side, 0, 0));
+    // "07" on the outboard nacelle flank, registration below: wrapped onto the curved skin
+    // (flat quads floated up to 7 cm off it).
+    hullDecal(kit.decal, nm, atlas, 'N07', 5.2, side > 0 ? 0.25 : Math.PI - 0.25, 0.95, side, '#2b2e33', NAC);
+    hullDecal(kit.decal, nm, atlas, 'REG', 5.2, side > 0 ? -0.07 : Math.PI + 0.07, 2.6, side, '#2b2e33', NAC);
   }
 
   // ---- pylons ---------------------------------------------------------------------------------
@@ -488,7 +489,7 @@ export function buildShip(asm: Asm, shell: PartBuilder, glass: PartBuilder, glow
     // Work lights over the opening (warm).
     for (const s of [-1, 1]) {
       kit.small.add(rbox(0.5, 0.08, 0.16, 0.02), { color: '#ffd9a8', rough: 0.3, panel: 0, glow: 4 }, W(T(s * 1.1, bottomAt(FUSE, 9.4, 1.1) + 0.12, 9.35)));
-      glows.add(new Vector3(s * 1.1, bottomAt(FUSE, 9.4, 1.1), 9.35).applyMatrix4(M), '#ffd9a8', 2.5, 0.5, GlowMode.Steady, 0, 1.5);
+      glows.add(new Vector3(s * 1.1, bottomAt(FUSE, 9.4, 1.1), 9.35).applyMatrix4(M), '#ffd9a8', 2.5, 0.5, GlowMode.Steady, 0, 1.5, new Vector3(0, -1, 0.3).transformDirection(M));
     }
   }
 
@@ -544,11 +545,11 @@ export function buildShip(asm: Asm, shell: PartBuilder, glass: PartBuilder, glow
 }
 
 /** Decal that wraps the hull: a small grid sampled on the surface. */
-function hullDecal(b: PartBuilder, M: Matrix4, atlas: DecalAtlas, name: string, zc: number, a: number, width: number, side: number, color: string): void {
+function hullDecal(b: PartBuilder, M: Matrix4, atlas: DecalAtlas, name: string, zc: number, a: number, width: number, side: number, color: string, stations: Station[] = FUSE): void {
   const r = atlas.rect(name);
   const h = width / r.aspect;
   // Angular height: approximate local radius of curvature from the station.
-  const st = stationAt(FUSE, uAtZ(FUSE, zc), tmpSt);
+  const st = { ...stationAt(stations, uAtZ(stations, zc), tmpSt) };
   const rad = Math.max(st.ht, st.w / 2) * 0.95;
   const da = h / rad;
   const nu = 12;
@@ -558,7 +559,7 @@ function hullDecal(b: PartBuilder, M: Matrix4, atlas: DecalAtlas, name: string, 
       // Starboard reads nose-ward, port reads tail-ward.
       const z = zc + (u - 0.5) * width * (side > 0 ? -1 : 1);
       const ang = a + (v - 0.5) * da * (side > 0 ? 1 : -1);
-      hullAt(FUSE, z, ang, 0.012, out);
+      hullAt(stations, z, ang, 0.012, out);
     },
     nu,
     nv,
@@ -578,7 +579,7 @@ function hullDecal(b: PartBuilder, M: Matrix4, atlas: DecalAtlas, name: string, 
   for (let i = 0; i < nor.count; i++) {
     const out = new Vector3().fromBufferAttribute(pos, i);
     const n = new Vector3().fromBufferAttribute(nor, i);
-    const radial = new Vector3(out.x, out.y - st.y, 0);
+    const radial = new Vector3(out.x - (st.x ?? 0), out.y - st.y, 0);
     if (n.dot(radial) < 0) nor.setXYZ(i, -n.x, -n.y, -n.z);
   }
   // Winding: make front faces face outward.

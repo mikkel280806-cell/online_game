@@ -30,13 +30,20 @@ export class GlowSet {
   private pos: number[] = [];
   private col: number[] = [];
   private par: number[] = [];
+  private dir: number[] = [];
 
-  /** colour is HDR (multiplied by intensity); size in metres; minPx keeps far lights visible. */
-  add(p: Vector3, color: ColorRepresentation, intensity: number, size: number, mode: GlowMode, phase = 0, minPx = 2.5): void {
+  /**
+   * colour is HDR (multiplied by intensity); size in metres; minPx keeps far lights visible.
+   * `facing` (world direction) makes it a lamp face: the glare fades out as the camera swings
+   * behind it, instead of a sprite being sliced by the lamp's own housing.
+   */
+  add(p: Vector3, color: ColorRepresentation, intensity: number, size: number, mode: GlowMode, phase = 0, minPx = 2.5, facing?: Vector3): void {
     const c = new Color(color).multiplyScalar(intensity);
     this.pos.push(p.x, p.y, p.z);
     this.col.push(c.r, c.g, c.b);
     this.par.push(size, mode, phase, minPx);
+    const d = facing ? facing.clone().normalize() : new Vector3();
+    this.dir.push(d.x, d.y, d.z);
   }
 
   build(): Points | null {
@@ -45,6 +52,7 @@ export class GlowSet {
     g.setAttribute('position', new BufferAttribute(new Float32Array(this.pos), 3));
     g.setAttribute('aColor', new BufferAttribute(new Float32Array(this.col), 3));
     g.setAttribute('aParams', new BufferAttribute(new Float32Array(this.par), 4));
+    g.setAttribute('aDir', new BufferAttribute(new Float32Array(this.dir), 3));
     g.computeBoundingSphere();
     const mat = createGlowMaterial();
     const pts = new Points(g, mat);

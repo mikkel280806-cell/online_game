@@ -532,6 +532,7 @@ export function createGlowMaterial(): ShaderMaterial {
     vertexShader: /* glsl */ `
       attribute vec3 aColor;
       attribute vec4 aParams;
+      attribute vec3 aDir;
       uniform float uTime;
       uniform float uScale;
       varying vec3 vCol;
@@ -554,6 +555,11 @@ export function createGlowMaterial(): ShaderMaterial {
         } else if (mode == 3) {
           float c = fract(t / 1.3);
           k = (c < 0.055 || (c > 0.12 && c < 0.175)) ? 1.0 : 0.0;
+        }
+        // Lamp faces only glare toward the front (see GlowSet.add).
+        if (dot(aDir, aDir) > 0.25) {
+          vec3 wp = (modelMatrix * vec4(position, 1.0)).xyz;
+          k *= smoothstep(-0.05, 0.3, dot(aDir, normalize(cameraPosition - wp)));
         }
         vCol = aColor * k;
         float px = aParams.x * uScale / max(-mv.z, 0.1);

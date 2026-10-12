@@ -43,6 +43,7 @@ const views: Record<string, LookdevView> = {
   // ---- close-ups for the gap / leak audit ----------------------------------------------------
   // Cargo containers: door end, 3/4 gameplay angle, blind end, grazing along the side, top.
   ctDoor: { position: [-0.6, 2.2, 25.5], target: [-4.6, 2.2, 23.0], fov: 50 },
+  ctDoorClose: { position: [-2.6, 1.5, 25.4], target: [-4.0, 1.4, 24.5], fov: 30 },
   ct34: { position: [4, 9, 34], target: [-7, 2.4, 23], fov: 45 },
   ctBlind: { position: [-15.5, 3.2, 27.5], target: [-9.5, 2.4, 23], fov: 50 },
   ctGraze: { position: [0.5, 1.4, 19.6], target: [-12, 1.8, 20.6], fov: 40 },

@@ -5,7 +5,8 @@
 //  - colliders don't put invisible walls far from any geometry,
 //  - spawn points and the routes between the places players go stay open.
 // PROPS_COLLIDER_MAP=path.ppm writes a top-down map (grey: solid, red: colliders, yellow: misses).
-import { writeFileSync } from 'node:fs';
+// PROPS_COLLIDERS_JSON=path.json checks another collider list (e.g. the previous one) instead.
+import { readFileSync, writeFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { BufferGeometry } from 'three';
 import { SPAWN_POINTS } from '../../src/env/layout';
@@ -226,7 +227,8 @@ beforeAll(() => {
     rasterise(part.geo, s, o.x, o.y, o.z);
   }
   fillEnclosed();
-  colliders = computeColliders();
+  // PROPS_COLLIDERS_JSON=file evaluates another collider set (e.g. an older one) against this geometry.
+  colliders = process.env.PROPS_COLLIDERS_JSON ? JSON.parse(readFileSync(process.env.PROPS_COLLIDERS_JSON, "utf8")) : computeColliders();
 }, 120_000);
 
 describe('props colliders vs. the built geometry', () => {

@@ -164,7 +164,7 @@ function buildHab(world: Asm, h: HabSpec, glows: GlowSet, atlas: DecalAtlas, hei
     a.hard(rbox(0.82, 0.58, 0.16, 0.1, 2), metal(GUN), m);
     if (w.lit) {
       a.small(rbox(0.6, 0.38, 0.1, 0.06, 2), { color: '#ffcf96', rough: 0.15, panel: 0, glow: 2.6 }, m.clone().multiply(T(0, 0, 0.04)));
-      glows.add(pos.clone().addScaledVector(nrm, 0.2).applyMatrix4(a.m), '#ffcc90', 0.8, 0.6, GlowMode.Steady, 0, 1.2);
+      glows.add(pos.clone().addScaledVector(nrm, 0.2).applyMatrix4(a.m), '#ffcc90', 0.8, 0.6, GlowMode.Steady, 0, 1.2, nrm.clone().transformDirection(a.m));
     } else {
       a.small(rbox(0.6, 0.38, 0.1, 0.06, 2), { color: '#0d1115', rough: 0.07, metal: 0.3, panel: 0 }, m.clone().multiply(T(0, 0, 0.04)));
     }
@@ -196,9 +196,9 @@ function buildHab(world: Asm, h: HabSpec, glows: GlowSet, atlas: DecalAtlas, hei
     // Door lamp (warm) and a status light.
     al.small(rbox(0.56, 0.14, 0.2, 0.03), metal(GUN), T(0, floor + 2.5, fz + 0.09));
     al.small(rbox(0.5, 0.04, 0.16, 0.015), { color: '#ffd9a8', rough: 0.3, panel: 0, glow: 5 }, T(0, floor + 2.43, fz + 0.1));
-    glows.add(al.pt(0, floor + 2.44, fz + 0.25), '#ffd2a0', 3.0, 0.6, GlowMode.Steady, 0, 1.5);
+    glows.add(al.pt(0, floor + 2.38, fz + 0.25), '#ffd2a0', 3.0, 0.6, GlowMode.Steady, 0, 1.5, al.dir(0, -0.6, 1));
     al.small(rbox(0.12, 0.12, 0.05, 0.02), { color: '#ff3a1a', rough: 0.3, panel: 0, glow: 4 }, T(0.85, floor + 1.4, fz + 0.02));
-    glows.add(al.pt(0.85, floor + 1.4, fz + 0.12), '#ff3a1a', 2, 0.25, GlowMode.Beacon, h.x * 0.1, 1.0);
+    glows.add(al.pt(0.85, floor + 1.4, fz + 0.1), '#ff3a1a', 2, 0.25, GlowMode.Beacon, h.x * 0.1, 1.0, al.dir(0, 0, 1));
     // Porch grating and steps down to the regolith.
     const pz = fz + 0.5;
     al.hard(rbox(1.9, 0.08, 1.0, 0.02), metal('#4a4c4f'), T(0, floor - 0.04, pz));
@@ -587,7 +587,8 @@ function buildRover(world: Asm, glows: GlowSet, heightAt: HeightFn): void {
   }
   // Chassis, fenders, cabin, bed.
   a.hard(rbox(1.9, 0.42, 5.9, 0.06), metal(GUN), T(0, 0.98, 0));
-  for (const z of [-2.05, 0, 2.05]) for (const s of [-1, 1]) a.hard(rbox(0.55, 0.06, 1.35, 0.02), metal('#2b2e33'), T(s * 1.3, 1.24, z, 0, 0, s * 0.1));
+  // Fenders bolted to the chassis rails (they used to hover beside them).
+  for (const z of [-2.05, 0, 2.05]) for (const s of [-1, 1]) a.hard(rbox(0.75, 0.06, 1.35, 0.02), metal('#2b2e33'), T(s * 1.2, 1.2, z, 0, 0, s * 0.1));
   const cabin = extrude(
     [
       [-2.95, 1.15],
@@ -620,14 +621,15 @@ function buildRover(world: Asm, glows: GlowSet, heightAt: HeightFn): void {
   for (const s of [-1, 1]) a.small(tube([new Vector3(s * 1.1, 1.3, 0.1), new Vector3(s * 1.1, 2.4, 0.15), new Vector3(s * 0.9, 2.55, 0.3)], 0.045, 10, 6), metal('#3a3d42'));
   a.small(strut(new Vector3(-0.9, 2.55, 0.3), new Vector3(0.9, 2.55, 0.3), 0.045, 6), metal('#3a3d42'));
   a.hard(rbox(1.7, 0.14, 0.3, 0.04), metal(GUN), T(0, 3.06, -1.5));
+  for (const s of [-1, 1]) a.small(rbox(0.12, 0.14, 0.2, 0.02), metal(GUN), T(s * 0.7, 2.93, -1.5));
   for (let k = 0; k < 4; k++) a.small(rbox(0.28, 0.1, 0.04, 0.02), { color: '#e8eef5', rough: 0.2, panel: 0, glow: 0 }, T(-0.6 + k * 0.4, 3.06, -1.66));
-  a.small(cyl(0.1, 0.12, 0.16, 10), { color: '#ffa020', rough: 0.2, panel: 0, glow: 1.2 }, T(0.7, 3.06, -0.6));
-  glows.add(a.pt(0.7, 3.2, -0.6), '#ffa020', 6, 0.5, GlowMode.Beacon, 0.2, 1.5);
-  a.small(cyl(0.012, 0.02, 1.8, 6), plain('#202020', 0.4), T(-0.9, 3.85, -0.7));
+  a.small(cyl(0.1, 0.12, 0.16, 10), { color: '#ffa020', rough: 0.2, panel: 0, glow: 1.2 }, T(0.7, 3.03, -0.6));
+  glows.add(a.pt(0.7, 3.17, -0.6), '#ffa020', 6, 0.5, GlowMode.Beacon, 0.2, 1.5);
+  a.small(cyl(0.012, 0.02, 1.8, 6), plain('#202020', 0.4), T(-0.9, 3.83, -0.7));
   // Bed cargo: gas bottles, winch, toolbox, drill rig.
   for (let k = 0; k < 4; k++) a.hard(bcyl(0.16, 1.1, 12), { color: k % 2 ? '#3d6b4a' : '#8d8a80', metal: 0.4, rough: 0.45, panel: 0.3 }, T(-0.75 + k * 0.36, 1.86, 2.6));
   a.small(strut(new Vector3(-1.0, 2.2, 2.6), new Vector3(0.45, 2.2, 2.6), 0.03, 5), metal('#222'));
-  a.hard(bcyl(0.32, 0.9, 16), metal('#3a3d42'), T(0.55, 1.68, 0.9, 0, 0, Math.PI / 2));
+  a.hard(bcyl(0.32, 0.9, 16), metal('#3a3d42'), T(0.55, 1.64, 0.9, 0, 0, Math.PI / 2));
   a.hard(rbox(0.9, 0.45, 0.55, 0.04), { color: '#9b2a14', metal: 0.2, rough: 0.5, panel: 0.8 }, T(-0.6, 1.53, 0.9));
   a.hard(rbox(0.3, 1.9, 0.3, 0.04), metal('#5a5d60'), T(0.75, 2.25, 2.0));
   a.small(strut(new Vector3(0.75, 3.2, 2.0), new Vector3(0.75, 1.35, 3.0), 0.04, 6), metal('#5a5d60'));
@@ -675,7 +677,7 @@ function buildFloodlights(world: Asm, glows: GlowSet, cones: ConeSet, heightAt: 
       }
       if (dead) return;
       const front = lp.clone().addScaledVector(dir, 0.2);
-      glows.add(front, '#d8e6ff', 8, 0.55, GlowMode.Steady, i * 0.3, 1.5);
+      glows.add(front, '#d8e6ff', 8, 0.55, GlowMode.Steady, i * 0.3, 1.5, dir);
       const far = lp.clone().addScaledVector(dir, lp.distanceTo(aim) * 1.05);
       cones.add(front, far, 0.24, 3.1);
     });
