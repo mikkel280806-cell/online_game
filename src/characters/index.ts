@@ -1,75 +1,111 @@
-import {
-  BoxGeometry,
-  CapsuleGeometry,
-  CylinderGeometry,
-  Group,
-  Mesh,
-  MeshBasicMaterial,
-  MeshStandardMaterial,
-  SphereGeometry,
-  TorusGeometry,
-  type Vector3,
-} from 'three';
-import { damp } from '../engine/camera';
-import { ROLES, type RoleId } from '../game/roles';
+// Playable crew member: an articulated EVA suit with procedural animation.
+//
+// Rendering: one SkinnedMesh for the whole suit (a single uber-material, see materials.ts)
+// plus the gold visor, so a character costs 2 draw calls (+ shadow passes).
+// Animation: see locomotion.ts. The bones are plain Object3D (THREE.Bone) children of `root`.
 
-// PLACEHOLDER: the Character agent replaces this with the articulated astronaut.
-// Public API to keep: `new Avatar(role)`, `.root`, `.role`, `.animate(position, yaw, speed, dt)`.
+import { Group, Mesh, Skeleton, SkinnedMesh, Sphere, SpotLight, Vector3, type BufferGeometry, type WebGLRenderer } from 'three';
+import type { RoleId } from '../game/roles';
+import { Locomotion, type FootState } from './locomotion';
+import { createSuitMaterial, prewarmSuitTextures, visorMaterial, type SuitMaterial } from './materials';
+import { createBones, type Bones } from './rig';
+import { buildSuit } from './suit';
 
-const WALK = 5.2;
+const cache = new Map<RoleId, { body: BufferGeometry; visor: BufferGeometry; triangles: number }>();
 
-/** Visual model of a crew member in a suit. Animation is driven by `speed`. */
-export class Avatar {
-  readonly root = new Group();
-  private body = new Group();
-  private phase = 0;
-
-  constructor(readonly role: RoleId) {
-    const accent = ROLES[role].color;
-    const suit = new MeshStandardMaterial({ color: 0xd9dde3, metalness: 0.15, roughness: 0.48 });
-    const dark = new MeshStandardMaterial({ color: 0x262a31, metalness: 0.6, roughness: 0.4 });
-    const glow = new MeshBasicMaterial({ color: accent, toneMapped: false });
-    const visorMat = new MeshStandardMaterial({
-      color: 0x05070a,
-      metalness: 1,
-      roughness: 0.08,
-      emissive: accent.clone().multiplyScalar(0.25),
-    });
-
-    const torso = new Mesh(new CapsuleGeometry(0.3, 0.55, 6, 16), suit);
-    torso.position.y = 0.95;
-    const belt = new Mesh(new TorusGeometry(0.31, 0.035, 8, 32), glow);
-    belt.rotation.x = Math.PI / 2;
-    belt.position.y = 0.78;
-    const helmet = new Mesh(new SphereGeometry(0.27, 24, 16), suit);
-    helmet.position.y = 1.58;
-    const visor = new Mesh(new SphereGeometry(0.22, 24, 16, -Math.PI * 0.42, Math.PI * 0.84, Math.PI * 0.28, Math.PI * 0.36), visorMat);
-    visor.position.set(0, 1.58, 0.07);
-    const pack = new Mesh(new BoxGeometry(0.46, 0.55, 0.22), dark);
-    pack.position.set(0, 1.05, -0.3);
-    const packLights = new Mesh(new BoxGeometry(0.3, 0.04, 0.02), glow);
-    packLights.position.set(0, 1.2, -0.42);
-    const legs = new Mesh(new CylinderGeometry(0.2, 0.14, 0.5, 12), dark);
-    legs.position.y = 0.32;
-    const boots = new Mesh(new CylinderGeometry(0.16, 0.18, 0.1, 12), dark);
-    boots.position.y = 0.05;
-
-    this.body.add(torso, belt, helmet, visor, pack, packLights, legs, boots);
-    this.body.traverse((o) => {
-      if (o instanceof Mesh && o.material !== glow) o.castShadow = true;
-    });
-    this.root.add(this.body);
+function suitFor(role: RoleId) {
+  let s = cache.get(role);
+  if (!s) {
+    s = buildSuit(role);
+    cache.set(role, s);
   }
-
-  /** Set pose for this frame. `speed` in m/s drives the walk cycle. */
-  animate(position: Vector3, yaw: number, speed: number, dt: number): void {
-    this.root.position.copy(position);
-    this.root.rotation.y = yaw;
-    const moving = Math.min(speed / WALK, 1.6);
-    this.phase += dt * (4 + speed * 1.6);
-    this.body.position.y = Math.abs(Math.sin(this.phase)) * 0.07 * moving;
-    this.body.rotation.x = damp(this.body.rotation.x, moving * 0.12, 10, dt);
-    this.body.rotation.z = Math.sin(this.phase) * 0.04 * moving;
-  }
+  return s;
 }
 
+/** Visual model of a crew member in an EVA suit. Animation is driven by `speed`. */
+export class Avatar {
+  readonly root = new Group();
+  readonly bones: Bones;
+  readonly skeleton: Skeleton;
+  readonly mesh: SkinnedMesh;
+  readonly visor: Mesh;
+  /** Triangles in this character (suit + visor). */
+  readonly triangles: number;
+  private readonly loco: Locomotion;
+  private readonly material: SuitMaterial;
+  private headlamp: SpotLight | null = null;
+
+  constructor(readonly role: RoleId) {
+    this.root.name = `avatar-${role}`;
+    const { bones, list } = createBones();
+    this.bones = bones;
+    const suit = suitFor(role);
+    this.triangles = suit.triangles;
+
+    this.material = createSuitMaterial();
+    this.mesh = new SkinnedMesh(suit.body, this.material);
+    this.mesh.name = 'suit';
+    this.root.add(bones.pelvis, this.mesh);
+    this.root.updateMatrixWorld(true);
+    this.skeleton = new Skeleton(list);
+    this.mesh.bind(this.skeleton);
+    // Generous fixed bounds (posed limbs never leave this sphere), so culling never needs a skinning pass.
+    this.mesh.boundingSphere = new Sphere(new Vector3(0, 0.95, 0), 1.4);
+    this.mesh.castShadow = true;
+    this.mesh.receiveShadow = true;
+
+    this.visor = new Mesh(suit.visor, visorMaterial());
+    this.visor.name = 'visor';
+    this.visor.castShadow = true;
+    this.visor.receiveShadow = true;
+    bones.head.add(this.visor);
+
+    this.loco = new Locomotion(role === 'vanguard' ? 0x51a7e : 0x7e74e);
+    this.loco.update(0, 0, 0, bones);
+  }
+
+  /** Set pose for this frame. `position.y` is the ground height; yaw 0 faces +Z; speed in m/s. */
+  animate(position: Vector3, yaw: number, speed: number, dt: number): void {
+    if (Number.isFinite(position.x) && Number.isFinite(position.y) && Number.isFinite(position.z)) this.root.position.copy(position);
+    if (Number.isFinite(yaw)) this.root.rotation.y = yaw;
+    this.loco.update(yaw, speed, dt, this.bones);
+  }
+
+  /** Glance at the wrist computer (idle only; it also happens on its own now and then). */
+  lookAtWrist(): void {
+    this.loco.triggerGesture();
+  }
+
+  /** Ground anchors of the feet (root space) and whether each is planted: for footstep effects. */
+  get feet(): readonly FootState[] {
+    return this.loco.feet;
+  }
+
+  /**
+   * Helmet lamps. Off: the lenses still glow faintly. On: they glow brightly and a real
+   * (unshadowed) spot light is added on the helmet — mind the scene's light budget.
+   */
+  setHeadlamp(on: boolean): void {
+    this.material.userData.emitGain.value.g = on ? 1.6 : 1;
+    if (on && !this.headlamp) {
+      const l = new SpotLight(0xdbe9ff, 14, 22, 0.42, 0.55, 1.6);
+      l.position.set(0, 0.14, 0.12);
+      l.target.position.set(0, -0.6, 6);
+      this.bones.head.add(l, l.target);
+      this.headlamp = l;
+    }
+    if (this.headlamp) this.headlamp.visible = on;
+  }
+
+  /** Bake the shared suit textures now instead of on first render (avoids a first-frame hitch). */
+  static prewarm(gl: WebGLRenderer): void {
+    prewarmSuitTextures(gl);
+  }
+
+  dispose(): void {
+    this.root.removeFromParent();
+    this.material.dispose();
+    this.skeleton.dispose();
+    this.headlamp?.dispose();
+  }
+}
