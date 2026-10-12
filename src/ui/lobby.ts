@@ -58,7 +58,7 @@ export class Lobby {
           'div.controls-hint',
           {},
           h('kbd', { text: 'WASD' }), ' move · ', h('kbd', { text: 'Shift' }), ' sprint · drag / swipe to look · scroll to zoom · ',
-          h('kbd', { text: 'F' }), ' interact · ', h('kbd', { text: 'F8' }), ' feedback',
+          h('kbd', { text: 'F' }), ' interact · ', h('kbd', { text: 'R' }), ' attack · ', h('kbd', { text: 'C' }), ' skill · ', h('kbd', { text: 'Space' }), ' dash · ', h('kbd', { text: 'F8' }), ' feedback',
         ),
       ),
     );

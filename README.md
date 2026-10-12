@@ -13,6 +13,9 @@ A two-player co-op space adventure that runs in the browser. See [PLAN.md](PLAN.
 | W A S D / arrows | Move (relative to the camera) |
 | Shift | Sprint |
 | F (hold) | Interact: force, hack, throw breakers |
+| R | Attack: Vanguard strikes, Tether fires a pulse shot (auto-aims) |
+| C | Vanguard: hold the shield up · Tether: gravity pulse (stuns and pulls drones) |
+| Space | Dash |
 | Drag, two-finger swipe, Q / E | Turn the camera |
 | Scroll / pinch | Zoom |
 | B | Solo: add or dismiss the bot partner |

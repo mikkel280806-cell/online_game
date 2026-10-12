@@ -15,6 +15,8 @@ import { NO_CONTROL, type PlayerControl } from './game/player';
 import { ROLES } from './game/roles';
 import { MissionFx } from './game/missionFx';
 import { ObjectiveUi } from './ui/objective';
+import { CombatHud } from './ui/combatHud';
+import { CombatView } from './game/combatFx';
 import { createWorld, type WorldDebug } from './game/world';
 import { createRoom, joinRoom, type NetOptions, type Session } from './net';
 import { FeedbackBox } from './ui/feedback';
@@ -103,6 +105,8 @@ const game = new Game(world);
 const stats = new FrameStats();
 const hud = new Hud(uiRoot);
 const objective = new ObjectiveUi(uiRoot);
+const combatHud = new CombatHud(uiRoot);
+const combatView = new CombatView(world.scene, world.heightAt, (o) => world.add(o));
 const missionFx = new MissionFx(world.scene, world.heightAt);
 const perf = new PerfOverlay(uiRoot);
 
@@ -175,6 +179,8 @@ function beginPlay(roomCode: string | null, role: 'host' | 'guest' | 'solo'): vo
   quatFrom.copy(camera.quaternion);
   rig.setView(0, 0.42, 12);
   mode = 'transition';
+  // A focused lobby button would "click" again on Space (dash).
+  (document.activeElement as HTMLElement | null)?.blur();
   transitionT = 0;
 }
 
@@ -210,6 +216,9 @@ let perfTimer = 0;
 const stepper = new FixedStepper();
 const ease = (t: number) => t * t * (3 - 2 * t);
 
+/** Key presses wait here until a simulation step uses them (a frame can run zero steps). */
+const pending = { attack: false, skill: false, dash: false };
+
 /** Turn keys into a world-space move direction relative to where the camera looks. */
 function playerControl(): PlayerControl {
   if (mode !== 'play' || feedback.isOpen) return NO_CONTROL;
@@ -224,6 +233,10 @@ function playerControl(): PlayerControl {
     z: rz * a.x + fz * a.y,
     sprint: input.isDown('ShiftLeft') || input.isDown('ShiftRight'),
     act: input.isDown('KeyF'),
+    hold: input.isDown('KeyC'),
+    attack: pending.attack,
+    skill: pending.skill,
+    dash: pending.dash,
   };
 }
 
@@ -249,8 +262,15 @@ const loop = new Loop(({ dt, time, frameMs }) => {
   const now = performance.now();
   stats.push(frameMs);
   const steps = stepper.steps(dt);
-  const control = playerControl();
-  for (let i = 0; i < steps; i++) game.update(SIM_DT, now - (steps - 1 - i) * SIM_DT * 1000, control);
+  if (mode === 'play') {
+    pending.attack ||= input.wasPressed('KeyR');
+    pending.skill ||= input.wasPressed('KeyC');
+    pending.dash ||= input.wasPressed('Space');
+  }
+  for (let i = 0; i < steps; i++) {
+    game.update(SIM_DT, now - (steps - 1 - i) * SIM_DT * 1000, playerControl());
+    pending.attack = pending.skill = pending.dash = false;
+  }
   game.present(stepper.alpha, dt, now);
   updateCamera(dt, time);
   world.update(time, camera);
@@ -259,7 +279,18 @@ const loop = new Loop(({ dt, time, frameMs }) => {
   const state = game.debugState();
   window.__hs = state;
   if (mode !== 'menu') hud.update(state);
-  objective.update(mode === 'play', game.mission, game.localRole, game.local?.position ?? null);
+  combatView.play(game.fxOut.splice(0), game.localRole);
+  combatView.update(dt, game.combat, game.shield(), game.local?.display ?? null);
+  {
+    const role = game.localRole;
+    const pos = game.local?.position;
+    const p = game.partner();
+    const revive = role && pos ? game.combat.revivePrompt(role, pos.x, pos.z, p ? { role: p.role, x: p.position.x, z: p.position.z } : null) : null;
+    const task = role && pos ? game.mission.prompt(role, pos.x, pos.z) : null;
+    const prompt = revive ? { ...revive, allowed: true } : task ? { ...task, progress: game.mission.progress } : null;
+    objective.update(mode === 'play', game.combat.objective ?? game.mission.objective, game.mission.done, prompt);
+    combatHud.update(mode === 'play', game.combat, role, p?.role ?? null, combatView.hurt);
+  }
   const myRole = game.localRole;
   if (myRole && game.local && mode !== 'menu') hud.label('me', ROLES[myRole].name, ROLES[myRole].css, game.local.display, camera);
   const partner = game.partner();

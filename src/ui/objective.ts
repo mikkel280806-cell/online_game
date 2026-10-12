@@ -1,5 +1,3 @@
-import type { Mission } from '../game/mission';
-import type { RoleId } from '../game/roles';
 import { h } from './dom';
 
 /** Current objective (top left) and the "Hold F" prompt with its progress bar (bottom centre). */
@@ -20,22 +18,23 @@ export class ObjectiveUi {
     root.append(this.objective, this.prompt);
   }
 
-  update(visible: boolean, mission: Mission, role: RoleId | null, pos: { x: number; z: number } | null): void {
+  update(visible: boolean, text: string, done: boolean, prompt: { text: string; allowed: boolean; progress: number } | null): void {
     this.objective.classList.toggle('hidden', !visible);
-    if (this.last !== mission.objective) {
-      this.last = mission.objective;
-      this.text.textContent = mission.objective;
-      this.objective.classList.toggle('done', mission.done);
+    if (this.last !== text) {
+      this.last = text;
+      this.text.textContent = text;
+      this.objective.classList.toggle('done', done);
       // Replay the highlight so a new objective is noticed.
       this.objective.classList.remove('fresh');
       void this.objective.offsetWidth;
       this.objective.classList.add('fresh');
     }
-    const p = visible && role && pos ? mission.prompt(role, pos.x, pos.z) : null;
+    const p = visible ? prompt : null;
     this.prompt.classList.toggle('hidden', !p);
     if (!p) return;
     this.promptText.textContent = p.allowed ? `Hold F · ${p.text}` : p.text;
     this.prompt.classList.toggle('blocked', !p.allowed);
-    this.bar.style.width = `${Math.round(mission.progress * 100)}%`;
+    this.bar.style.width = `${Math.round(p.progress * 100)}%`;
   }
+
 }

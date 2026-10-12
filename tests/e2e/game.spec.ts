@@ -2,7 +2,8 @@ import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 
 // Same-browser multiplayer: BroadcastChannel signaling, real WebRTC over host candidates.
 // The cloud renders in software at a few fps, so keep rendering cheap and never assume timing.
-const URL = '/?net=local&ice=none&telemetry=0&quality=low&scale=0.4&p2ptimeout=30000';
+// rays=0: god rays cost seconds per frame in the software renderer.
+const URL = '/?net=local&ice=none&telemetry=0&quality=low&scale=0.4&rays=0&p2ptimeout=30000';
 
 type HS = NonNullable<Window['__hs']>;
 const state = (page: Page) => page.evaluate(() => window.__hs as HS);
@@ -110,7 +111,7 @@ for (const relay of [false, true]) {
 // Needs network access to Supabase, which CI has and the dev container may not.
 test.describe('over Supabase Realtime', () => {
   test.skip(!process.env.E2E_SUPABASE, 'set E2E_SUPABASE=1 to run (needs internet)');
-  const NET_URL = '/?telemetry=0&quality=low&scale=0.4&p2ptimeout=30000';
+  const NET_URL = '/?telemetry=0&quality=low&scale=0.4&rays=0&p2ptimeout=30000';
 
   for (const relay of [false, true]) {
     test(`two players connect over the internet (${relay ? 'relay' : 'p2p'})`, async ({ context }) => {
@@ -121,7 +122,7 @@ test.describe('over Supabase Realtime', () => {
 });
 
 test('solo: restart the beacon with the bot (both roles, then both breakers)', async ({ page }) => {
-  test.setTimeout(300_000);
+  test.setTimeout(480_000);
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(URL);
@@ -147,6 +148,10 @@ test('solo: restart the beacon with the bot (both roles, then both breakers)', a
   await page.keyboard.down('KeyF');
   await expect.poll(async () => (await state(page)).mission.done, { timeout: 120_000 }).toBe(true);
   await page.keyboard.up('KeyF');
-  await expect(page.locator('.objective-text')).toContainText('Beacon online');
+  // The beacon wakes the wreck: drones attack, and the bot (Tether) shoots them down.
+  await expect.poll(async () => (await state(page)).combat.active, { timeout: 30_000 }).toBe(true);
+  await expect(page.locator('.objective-text')).toContainText('drones');
+  for (let i = 0; i < 3; i++) await page.keyboard.press('KeyR'); // swing at whatever is near
+  await expect.poll(async () => (await state(page)).combat.killed, { timeout: 180_000 }).toBeGreaterThanOrEqual(3);
   expect(errors).toEqual([]);
 });

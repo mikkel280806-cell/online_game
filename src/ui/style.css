@@ -437,3 +437,60 @@ kbd {
   background: var(--cyan);
   box-shadow: 0 0 10px var(--cyan);
 }
+
+/* ---------- Combat HUD ---------- */
+.combat-hud { position: absolute; inset: 0; pointer-events: none; }
+.vitals {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  width: 240px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  display: grid;
+  gap: 8px;
+}
+.vital-name { font-size: 14px; font-weight: 600; letter-spacing: 0.04em; }
+.vital-track { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+.vital-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #ff6b6b, #ffd36b 60%, #8dff9a); transition: width 0.15s; }
+.vital-fill.reviving { background: var(--cyan); transition: none; }
+.abilities {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  display: flex;
+  gap: 14px;
+  font-size: 15px;
+}
+.ability.cooling { opacity: 0.4; }
+.downed {
+  position: absolute;
+  top: 38%;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 80vw;
+  font-family: var(--font-title);
+  font-size: 18px;
+  letter-spacing: 0.06em;
+  text-align: center;
+  color: var(--danger);
+  text-shadow: 0 0 12px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+}
+.hurt-flash {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(255, 40, 30, 0.85) 100%);
+}
+/* #ui > * re-enables pointer events for panels; these overlays must never eat clicks or drags. */
+#ui > .hurt-flash,
+#ui > .downed,
+#ui > .combat-hud,
+#ui > .objective,
+#ui > .prompt {
+  pointer-events: none;
+}

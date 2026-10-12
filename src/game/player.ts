@@ -12,6 +12,9 @@ const WALK = 5.2;
 const SPRINT = 8.4;
 const ACCEL = 38;
 const FRICTION = 12;
+const DASH_SPEED = 15;
+const DASH_TIME = 0.16;
+const DASH_COOLDOWN = 1.1;
 
 /** What a player wants to do this step, in world space. Used by humans and by the bot. */
 export interface PlayerControl {
@@ -21,6 +24,12 @@ export interface PlayerControl {
   sprint: boolean;
   /** Holding the interact key. */
   act?: boolean;
+  /** Pressed this step: primary attack, role skill, dash. */
+  attack?: boolean;
+  skill?: boolean;
+  dash?: boolean;
+  /** Holding the role skill (the Vanguard's shield). */
+  hold?: boolean;
 }
 
 export const NO_CONTROL: PlayerControl = { x: 0, z: 0, sprint: false };
@@ -37,6 +46,10 @@ export class LocalPlayer {
   readonly position = new Vector3();
   readonly velocity = new Vector3();
   yaw = 0;
+  /** Knocked out in combat: can't move until revived. */
+  downed = false;
+  private dashT = 0;
+  private dashCd = 0;
   /** Where the avatar is drawn: between the last two simulation steps. */
   readonly display = new Vector3();
   private readonly prev = new Vector3();
@@ -60,11 +73,23 @@ export class LocalPlayer {
   update(control: PlayerControl, dt: number, ground: Ground): void {
     this.prev.copy(this.position);
     this.prevYaw = this.yaw;
+    if (this.downed) control = NO_CONTROL;
     let ix = control.x;
     let iz = control.z;
     const len = Math.hypot(ix, iz);
     const max = (control.sprint ? SPRINT : WALK) * Math.min(1, len);
-    if (len > 0.01) {
+    this.dashCd = Math.max(0, this.dashCd - dt);
+    if (control.dash && this.dashCd <= 0) {
+      // Burst along the stick, or straight ahead when standing still.
+      const dx = len > 0.01 ? ix / len : Math.sin(this.yaw);
+      const dz = len > 0.01 ? iz / len : Math.cos(this.yaw);
+      this.velocity.set(dx * DASH_SPEED, 0, dz * DASH_SPEED);
+      this.dashT = DASH_TIME;
+      this.dashCd = DASH_COOLDOWN;
+    }
+    if (this.dashT > 0) {
+      this.dashT -= dt;
+    } else if (len > 0.01) {
       ix /= len;
       iz /= len;
       this.velocity.x += ix * ACCEL * dt;
@@ -109,5 +134,8 @@ export class LocalPlayer {
     this.display.lerpVectors(this.prev, this.position, alpha);
     const yaw = lerpAngle(this.prevYaw, this.yaw, alpha);
     this.avatar.animate(this.display, yaw, this.speed, frameDt);
+    // Downed: lie on the side (the animation keeps breathing underneath).
+    this.avatar.root.rotation.z = this.downed ? 1.35 : 0;
+    if (this.downed) this.avatar.root.position.y += 0.3;
   }
 }
