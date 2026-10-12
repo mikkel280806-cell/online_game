@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>net harness</title>
+  </head>
+  <body>
+    <!-- Loaded by tests/e2e/net.spec.ts through a Vite dev server. Exposes the net layer as window.hs. -->
+    <script type="module">
+      import * as net from '/src/net/index.ts';
+
+      const inbox = [];
+      const statuses = [];
+      let session = null;
+
+      function attach(s) {
+        session = s;
+        s.onMessage((m, ch) => inbox.push({ ch, m }));
+        s.onStatus((st) => statuses.push(st));
+        return { code: s.roomCode, role: s.role, selfId: s.selfId, status: s.status };
+      }
+
+      window.hs = {
+        async host(opts) {
+          return attach(await net.createRoom(opts));
+        },
+        async join(code, opts) {
+          const started = performance.now();
+          try {
+            return { ok: true, ms: performance.now() - started, ...attach(await net.joinRoom(code, opts)) };
+          } catch (e) {
+            return { ok: false, ms: performance.now() - started, message: e.message, code: e.code };
+          }
+        },
+        send(ch, m) {
+          session.send(ch, m);
+        },
+        status() {
+          return session ? session.status : null;
+        },
+        rtt() {
+          return session ? session.rttMs() : null;
+        },
+        inbox() {
+          return inbox.slice();
+        },
+        statuses() {
+          return statuses.slice();
+        },
+        close() {
+          session?.close();
+        },
+      };
+      window.__netReady = true;
+    </script>
+  </body>
+</html>
