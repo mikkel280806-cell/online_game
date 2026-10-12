@@ -59,7 +59,7 @@ export const DEFAULT_TUNING: Tuning = {
   hostProbeMs: 700,
   joinTimeoutMs: 10_000,
   joinRetryMs: 1000,
-  readyTimeoutMs: 10_000,
+  readyTimeoutMs: 20_000,
   pingIntervalMs: 2000,
   restartDelayMs: 1000,
   maxCodeAttempts: 8,

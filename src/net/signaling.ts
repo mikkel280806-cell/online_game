@@ -201,13 +201,11 @@ export class SupabaseSignaling extends BaseSignaling {
           if (this.closed) return;
           if (status === 'SUBSCRIBED') {
             // Runs again after automatic rejoins, so presence is re-announced too.
-            channel
-              .track({ role: this.init.role, joinedAt: this.init.joinedAt })
-              .then((res) => {
-                if (res === 'ok') this.markReady();
-                else this.markReady(new Error(`Presence track failed: ${res}`));
-              })
-              .catch((e: unknown) => this.markReady(e instanceof Error ? e : new Error(String(e))));
+            this.announce(channel, 3);
+          } else if (status === 'TIMED_OUT') {
+            // A slow join (busy network or main thread) is retried by realtime-js itself;
+            // openSignaling's ready timeout decides when to give up.
+            console.warn('[net] realtime join timed out, retrying');
           } else {
             // CHANNEL_ERROR / TIMED_OUT / CLOSED. realtime-js retries on its own after a
             // successful join; before that, fail fast so the lobby can show an error.
@@ -218,6 +216,19 @@ export class SupabaseSignaling extends BaseSignaling {
     } catch (err) {
       this.markReady(err instanceof Error ? err : new Error(String(err)));
     }
+  }
+
+  /** Publish our presence; a timed-out track is retried a few times before failing. */
+  private announce(channel: RealtimeChannel, triesLeft: number): void {
+    channel
+      .track({ role: this.init.role, joinedAt: this.init.joinedAt })
+      .then((res) => {
+        if (this.closed) return;
+        if (res === 'ok') this.markReady();
+        else if (res === 'timed out' && triesLeft > 1) this.announce(channel, triesLeft - 1);
+        else this.markReady(new Error(`Presence track failed: ${res}`));
+      })
+      .catch((e: unknown) => this.markReady(e instanceof Error ? e : new Error(String(e))));
   }
 
   private syncPresence(): void {

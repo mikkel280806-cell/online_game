@@ -53,7 +53,12 @@ async function playTogether(context: BrowserContext, url: string, transport: str
 
   await a.getByTestId('create').click();
   const code = a.locator('.hud .code');
-  await expect(code).toHaveText(/^[A-Z0-9]{4}$/, { timeout: 20_000 });
+  // Fail with the lobby's own message if the room can't be created, not a bare timeout.
+  await expect
+    .poll(async () => (await code.textContent()) || (await a.locator('.lobby-error').textContent()) || '', {
+      timeout: 45_000,
+    })
+    .toMatch(/^[A-Z0-9]{4}$/);
   await b.getByLabel('Room code').fill((await code.textContent())!);
   await b.getByTestId('join').click();
 
