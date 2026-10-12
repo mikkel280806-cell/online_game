@@ -761,6 +761,21 @@ function buildArm(b: SuitBuilder, side: 1 | -1, pal: Pal, fabric: Mk, shell: Mk,
     strip.applyMatrix4(new Matrix4().makeScale(0.93, 0.72, 0.93));
     b.add(strip, glow(pal.glow), arm, TR([x + side * 0.006, j.y + 0.018, z], [0, 0, -side * 0.12]));
   }
+  // Rivets around the cap, just above the light strip.
+  {
+    const capM = TR([x + side * 0.006, j.y + 0.018, z], [0, 0, -side * 0.12]).multiply(new Matrix4().makeScale(0.93, 0.72, 0.93));
+    const n = new Vector3();
+    for (let k = 0; k < 8; k++) {
+      const th = (k / 8) * Math.PI * 2 + Math.PI / 8;
+      n.set(Math.sin(th), 0, Math.cos(th));
+      const a = n.clone().multiplyScalar(0.095).setY(0.014);
+      const c = n.clone().multiplyScalar(0.104).setY(0.014);
+      b.add(cylinder(a, c, 0.005, 0.0042, 6), metal(), arm, capM);
+    }
+  }
+  // Stepped plates (lames) under the cap: the shoulder reads as layered armour, not a ball.
+  b.add(shellPlate(band(smoothArm, 1.372, 1.422, 4), out - 1.35, out + 1.35, 10, { offset: 0.017, thick: 0.009 }), shell(pal.shell, { wear: 0.14 }), arm);
+  b.add(shellPlate(band(smoothArm, 1.33, 1.376, 4), out - 1.2, out + 1.2, 8, { offset: 0.011, thick: 0.008 }), shell(pal.shellGrey, { wear: 0.18 }), arm);
   // Patch on the upper arm.
   {
     const p = ringPoint(sampleRings(smoothArm, 1.29), out + side * 0.25, new Vector3(), 0.003);
