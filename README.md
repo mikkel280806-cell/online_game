@@ -4,18 +4,25 @@ A two-player co-op space adventure that runs in the browser. See [PLAN.md](PLAN.
 
 ## Play
 
-1. Both players open **https://hollow-star-mikkel7.vercel.app** in Chrome or Safari.
+1. Both players open **https://hollow-star.vercel.app** in Chrome or Safari.
 2. One player clicks **Create room** and reads out the 4-letter code.
 3. The other types the code and clicks **Join**.
 
-| Key | Action |
+| Input | Action |
 |---|---|
-| W A S D / arrows | Move |
+| W A S D / arrows | Move (relative to the camera) |
 | Shift | Sprint |
+| Drag, two-finger swipe, Q / E | Turn the camera |
+| Scroll / pinch | Zoom |
+| C | Free camera: fly with WASD, Space/Ctrl up/down, Shift fast; C again to return |
+| B | Solo: add or dismiss the bot partner |
+| H | Hide the HUD (for screenshots) |
 | F3 | Performance stats |
 | F8 | Send feedback with a screenshot (goes straight to the developer) |
 
-URL options: `?quality=low|medium|high`, `?relay=1` (force the relay connection), `?telemetry=0`.
+**Solo:** "Play solo with a bot partner" starts you with an AI crewmate who follows you, catches up, and wanders off to look at things when you stand still.
+
+URL options: `?quality=low|medium|high`, `?scale=0.5` (render resolution cap), `?relay=1` (force the relay connection), `?bot=0` (solo without the bot), `?telemetry=0`.
 
 ## Develop
 

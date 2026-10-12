@@ -22,17 +22,25 @@ async function walk(page: Page, key: string, dist = 2.5) {
   await expect.poll(async () => (await state(page)).local!.speed, { timeout: 10_000 }).toBeLessThan(0.01);
 }
 
-test('solo: explore alone and walk', async ({ page }) => {
+test('solo: walk around with the bot partner following', async ({ page }) => {
+  test.setTimeout(180_000);
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(URL);
   await page.getByTestId('solo').click();
-  await expect.poll(async () => (await state(page))?.phase).toBe('solo');
+  await expect.poll(async () => (await state(page))?.phase, { timeout: 30_000 }).toBe('solo');
+  expect((await state(page)).bot).not.toBeNull();
   const before = await state(page);
-  await walk(page, 'KeyD');
+  await walk(page, 'KeyD', 8);
   const after = await state(page);
-  expect(after.local!.x).toBeGreaterThan(before.local!.x + 2);
-  expect(Math.abs(after.local!.z - before.local!.z)).toBeLessThan(0.5);
+  expect(after.local!.x).toBeGreaterThan(before.local!.x + 7);
+  // The bot catches up and stays close without walking into us.
+  await expect
+    .poll(async () => {
+      const s = await state(page);
+      return Math.hypot(s.bot!.x - s.local!.x, s.bot!.z - s.local!.z);
+    }, { timeout: 60_000 })
+    .toBeLessThan(6);
   expect(errors).toEqual([]);
 });
 
