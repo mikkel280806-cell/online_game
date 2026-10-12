@@ -33,7 +33,8 @@ const tab = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 const errors = [];
 tab.on('pageerror', (e) => errors.push(e.message));
 tab.on('console', (m) => {
-  if (m.type() === 'error' || m.type() === 'warning') errors.push(`[${m.type()}] ${m.text()}`);
+  if (m.text().startsWith('[lookdev]')) console.log(m.text());
+  else if (m.type() === 'error' || m.type() === 'warning') errors.push(`[${m.type()}] ${m.text()}`);
 });
 
 const files = [];

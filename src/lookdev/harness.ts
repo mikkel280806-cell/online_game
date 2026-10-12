@@ -145,5 +145,7 @@ export async function runLookdev(opts: LookdevOptions): Promise<void> {
     renderer.render(1 / 60, 16);
     await new Promise((r) => requestAnimationFrame(r));
   }
+  const info = gl.info.render;
+  console.info(`[lookdev] view=${params.get('view') ?? names[0]} draws=${info.calls} triangles=${info.triangles}`);
   window.__shotReady = true;
 }
