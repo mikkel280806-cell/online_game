@@ -1,6 +1,7 @@
 import {
   Color,
   DirectionalLight,
+  HemisphereLight,
   Material,
   Mesh,
   PMREMGenerator,
@@ -47,7 +48,7 @@ export function createLighting(gl: WebGLRenderer, scene: Scene, camera: Perspect
     mode: 'practical',
     shadowMapSize: settings.size,
     lightDirection: SUN_DIR.clone().negate(),
-    lightIntensity: 3.6,
+    lightIntensity: 7.5,
     lightNear: 1,
     lightFar: 3000,
     lightMargin: 400,
@@ -60,8 +61,11 @@ export function createLighting(gl: WebGLRenderer, scene: Scene, camera: Perspect
     light.shadow.normalBias = 0.025 * (i + 1) * (i + 1);
   });
 
+  // Fill: cool skylight from above, warm dust bounce from below. Keeps shadows readable.
+  scene.add(new HemisphereLight(new Color('#7f90b4'), new Color('#6a5040'), 1.1));
+
   // Faint warm bounce from Orrin. No shadows.
-  const bounce = new DirectionalLight(new Color('#c98a55'), 0.28);
+  const bounce = new DirectionalLight(new Color('#c98a55'), 0.6);
   bounce.position.copy(PLANET_DIR).multiplyScalar(100);
   scene.add(bounce, bounce.target);
 
@@ -70,7 +74,7 @@ export function createLighting(gl: WebGLRenderer, scene: Scene, camera: Perspect
   const envScene = new Scene();
   envScene.add(sky.createEnvDome());
   scene.environment = pmrem.fromScene(envScene, 0.02, 1, 20000).texture;
-  scene.environmentIntensity = 0.75;
+  scene.environmentIntensity = 1.2;
   pmrem.dispose();
 
   const done = new WeakSet<Material>();

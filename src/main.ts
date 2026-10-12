@@ -70,6 +70,7 @@ const toneMap = params.get('tm');
 renderer.configurePost({
   quality,
   sunMesh: world.sky.sunMesh,
+  exposure: Number(params.get('exposure')) || 1.25,
   ...(toneMap === 'agx' || toneMap === 'aces' || toneMap === 'neutral' ? { toneMap } : {}),
 });
 renderer.onResize = (w, h) => {
