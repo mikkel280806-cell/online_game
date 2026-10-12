@@ -1,0 +1,347 @@
+:root {
+  --ink: #e8eef6;
+  --ink-dim: #9aa8bb;
+  --glass: rgba(10, 14, 24, 0.62);
+  --glass-edge: rgba(140, 200, 255, 0.18);
+  --cyan: #6fe3ff;
+  --amber: #ffae5c;
+  --danger: #ff6b6b;
+  --font-ui: 'Rajdhani', system-ui, sans-serif;
+  --font-title: 'Orbitron', 'Rajdhani', system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  color: var(--ink);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+#game {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  display: block;
+}
+
+#ui {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+#ui > * {
+  pointer-events: auto;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ---------- Title + lobby ---------- */
+
+.lobby {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 30%, rgba(0, 0, 0, 0.55) 100%);
+  transition: opacity 0.6s ease;
+}
+
+.lobby.fading {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.lobby-inner {
+  width: min(900px, calc(100vw - 32px));
+  text-align: center;
+}
+
+.lobby-inner .panel {
+  max-width: 460px;
+  margin: 0 auto;
+}
+
+.title {
+  font-family: var(--font-title);
+  font-weight: 700;
+  font-size: clamp(30px, 6vw, 72px);
+  letter-spacing: 0.18em;
+  white-space: nowrap;
+  margin: 0 0 4px;
+  text-shadow:
+    0 0 24px rgba(255, 160, 80, 0.45),
+    0 0 2px rgba(255, 255, 255, 0.8);
+  padding-left: 0.18em;
+}
+
+.subtitle {
+  color: var(--ink-dim);
+  font-size: 17px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  margin: 0 0 36px;
+}
+
+.panel {
+  background: var(--glass);
+  border: 1px solid var(--glass-edge);
+  border-radius: 14px;
+  padding: 22px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+}
+
+.btn {
+  display: block;
+  width: 100%;
+  font: 600 18px var(--font-ui);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: linear-gradient(180deg, rgba(111, 227, 255, 0.18), rgba(111, 227, 255, 0.06));
+  border: 1px solid rgba(111, 227, 255, 0.45);
+  border-radius: 10px;
+  padding: 13px 16px;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    transform 0.1s;
+}
+
+.btn:hover {
+  background: linear-gradient(180deg, rgba(111, 227, 255, 0.3), rgba(111, 227, 255, 0.1));
+  border-color: var(--cyan);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn.secondary {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.18);
+  color: var(--ink-dim);
+  font-size: 15px;
+}
+
+.join-row {
+  display: flex;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.join-row input {
+  flex: 1;
+  min-width: 0;
+  font: 700 24px var(--font-title);
+  letter-spacing: 0.3em;
+  text-align: center;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  padding: 8px;
+  outline: none;
+}
+
+.join-row input:focus {
+  border-color: var(--amber);
+}
+
+.join-row .btn {
+  width: auto;
+  border-color: rgba(255, 174, 92, 0.55);
+  background: linear-gradient(180deg, rgba(255, 174, 92, 0.22), rgba(255, 174, 92, 0.06));
+}
+
+.divider {
+  color: var(--ink-dim);
+  font-size: 13px;
+  letter-spacing: 0.3em;
+  margin: 16px 0 0;
+}
+
+.lobby-error {
+  color: var(--danger);
+  min-height: 22px;
+  margin-top: 12px;
+  font-size: 16px;
+}
+
+.controls-hint {
+  margin-top: 22px;
+  color: var(--ink-dim);
+  font-size: 15px;
+  letter-spacing: 0.05em;
+}
+
+kbd {
+  font: 600 13px var(--font-ui);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0 5px;
+  margin: 0 1px;
+}
+
+/* ---------- HUD ---------- */
+
+.hud {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 16px;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+.hud .code {
+  font-family: var(--font-title);
+  font-size: 26px;
+  letter-spacing: 0.25em;
+  color: var(--amber);
+}
+
+.hud .status {
+  color: var(--ink-dim);
+}
+
+.hud .status .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  background: var(--ink-dim);
+  vertical-align: middle;
+}
+
+.hud .status.connected .dot {
+  background: #5cff9b;
+  box-shadow: 0 0 8px #5cff9b;
+}
+
+.hud .status.waiting .dot,
+.hud .status.connecting .dot {
+  background: var(--amber);
+  animation: pulse 1.2s infinite;
+}
+
+.hud .status.disconnected .dot,
+.hud .status.failed .dot {
+  background: var(--danger);
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.name-label {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* ---------- Perf overlay ---------- */
+
+.perf {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  min-width: 200px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font: 500 14px ui-monospace, 'SF Mono', Menlo, monospace;
+  line-height: 1.5;
+  pointer-events: none;
+  white-space: pre;
+}
+
+/* ---------- Feedback ---------- */
+
+.feedback {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  width: min(520px, calc(100vw - 32px));
+}
+
+.feedback h3 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.feedback textarea {
+  width: 100%;
+  height: 90px;
+  resize: none;
+  font: 500 16px var(--font-ui);
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  padding: 8px;
+  outline: none;
+}
+
+.feedback .row {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+  align-items: center;
+}
+
+.feedback .row .btn {
+  width: auto;
+}
+
+.feedback .note {
+  color: var(--ink-dim);
+  font-size: 14px;
+  flex: 1;
+}
+
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 17px;
+  pointer-events: none;
+  transition: opacity 0.4s;
+}
