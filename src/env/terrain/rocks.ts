@@ -28,6 +28,7 @@ import { createNoise3D } from 'simplex-noise';
 import { mulberry32 } from '../../game/random';
 import type { CircleCollider } from '../../game/collision';
 import { LANDING_PAD, OUTPOST_FLAT_RADIUS, PLAY_RADIUS, TRENCH, WRECK } from '../layout';
+import type { ShadowHint } from '../lighting';
 import type { Quality } from '../types';
 import { hash01, smoothstep, WRECK_FWD_X, WRECK_FWD_Z, type TerrainModel } from './heightfield';
 import type { TerrainGrid } from './grid';
@@ -322,7 +323,14 @@ export function scatterBoulders(model: TerrainModel, grid: TerrainGrid, seed: nu
 }
 
 // ---------------------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------------------------
 // Instanced meshes
+//
+// Triangle budget: rocks are small on screen, and a rock with more triangles than pixels costs
+// a lot (tiny triangles are shaded in 2x2 quads, and every shadow cascade draws them again).
+// So every class has a near and a far level of detail, chosen per instance by distance to the
+// camera and re-bucketed whenever the camera has moved a few metres (instance data is
+// precomputed, re-bucketing is a copy). Small stones cast shadows into the first cascade only.
 
 export interface RockSet {
   group: Object3D;
@@ -334,12 +342,97 @@ export interface RockSet {
   update(camera: Camera): void;
 }
 
-/** Size classes: geometry detail follows size, so small rocks stay cheap. */
+/**
+ * Size classes: geometry detail follows size, so small rocks stay cheap. lodDist in metres;
+ * shadowReach: longest shadow of the class (tallest rock x ~5 at this sun elevation).
+ */
 const CLASSES = [
-  { key: 'b', min: 1.3, shapes: 2, detail: 4, lowDetail: 3, farDetail: 3, cuts: 7 },
-  { key: 'm', min: 0.6, shapes: 2, detail: 3, lowDetail: 2, farDetail: 2, cuts: 6 },
-  { key: 's', min: 0, shapes: 2, detail: 1, lowDetail: 1, farDetail: 1, cuts: 4 },
+  { key: 'b', min: 1.3, shapes: 2, detail: 4, lowDetail: 3, lodDetail: 2, lodDist: 70, farDetail: 2, cuts: 7, shadowReach: 24 },
+  { key: 'm', min: 0.6, shapes: 2, detail: 3, lowDetail: 2, lodDetail: 1, lodDist: 45, farDetail: 1, cuts: 6, shadowReach: 8 },
+  { key: 's', min: 0, shapes: 2, detail: 1, lowDetail: 1, lodDetail: 0, lodDist: 28, farDetail: 0, cuts: 4, shadowReach: 4 },
 ];
+
+/** Re-bucket the levels of detail after the camera moved this far (m). */
+const LOD_REBUCKET = 6;
+
+/** Instances that switch between a near and a far mesh by distance to the camera. */
+class LodSet {
+  readonly near: InstancedMesh;
+  readonly far: InstancedMesh;
+  private x: Float32Array;
+  private z: Float32Array;
+  private mats: Float32Array;
+  private cols: Float32Array;
+  private n = 0;
+
+  constructor(nearGeo: BufferGeometry, farGeo: BufferGeometry, material: Material, capacity: number, name: string, readonly lodDist: number) {
+    this.near = new InstancedMesh(nearGeo, material, capacity);
+    this.far = new InstancedMesh(farGeo, material, capacity);
+    this.near.name = `${name}-lod0`;
+    this.far.name = `${name}-lod1`;
+    for (const m of [this.near, this.far]) {
+      m.instanceMatrix.setUsage(DynamicDrawUsage);
+      m.setColorAt(0, _c.setRGB(1, 1, 1));
+      m.instanceColor!.setUsage(DynamicDrawUsage);
+      m.count = 0;
+      m.visible = false;
+    }
+    this.x = new Float32Array(capacity);
+    this.z = new Float32Array(capacity);
+    this.mats = new Float32Array(capacity * 16);
+    this.cols = new Float32Array(capacity * 3);
+  }
+
+  add(matrix: Matrix4, color: Color, x: number, z: number): void {
+    const i = this.n++;
+    matrix.toArray(this.mats, i * 16);
+    color.toArray(this.cols, i * 3);
+    this.x[i] = x;
+    this.z[i] = z;
+  }
+
+  /** Split the instances into the near and far mesh around (cx, cz). */
+  assign(cx: number, cz: number): void {
+    const r2 = this.lodDist * this.lodDist;
+    const nm = this.near.instanceMatrix.array as Float32Array;
+    const fm = this.far.instanceMatrix.array as Float32Array;
+    const nc = this.near.instanceColor!.array as Float32Array;
+    const fc = this.far.instanceColor!.array as Float32Array;
+    let a = 0;
+    let b = 0;
+    for (let i = 0; i < this.n; i++) {
+      const dx = this.x[i] - cx;
+      const dz = this.z[i] - cz;
+      if (dx * dx + dz * dz < r2) {
+        nm.set(this.mats.subarray(i * 16, i * 16 + 16), a * 16);
+        nc.set(this.cols.subarray(i * 3, i * 3 + 3), a * 3);
+        a++;
+      } else {
+        fm.set(this.mats.subarray(i * 16, i * 16 + 16), b * 16);
+        fc.set(this.cols.subarray(i * 3, i * 3 + 3), b * 3);
+        b++;
+      }
+    }
+    commit(this.near, a);
+    commit(this.far, b);
+  }
+}
+
+/** Upload the first `count` instances and refit the culling sphere. */
+function commit(m: InstancedMesh, count: number): void {
+  m.count = count;
+  m.visible = count > 0;
+  if (!count) return;
+  m.instanceMatrix.clearUpdateRanges();
+  m.instanceMatrix.addUpdateRange(0, count * 16);
+  m.instanceMatrix.needsUpdate = true;
+  if (m.instanceColor) {
+    m.instanceColor.clearUpdateRanges();
+    m.instanceColor.addUpdateRange(0, count * 3);
+    m.instanceColor.needsUpdate = true;
+  }
+  m.computeBoundingSphere();
+}
 
 export function createRocks(
   model: TerrainModel,
@@ -350,6 +443,9 @@ export function createRocks(
 ): RockSet {
   const group = new Object3D();
   group.name = 'terrain-rocks';
+  const boulders = new Object3D();
+  boulders.name = 'terrain-boulders';
+  group.add(boulders);
   const shape = (ci: number, i: number, detail: number) =>
     makeRockGeometry(seed * 31 + ci * 100 + i, {
       detail,
@@ -358,56 +454,117 @@ export function createRocks(
       lumpiness: ci === 0 ? 1 : 1.1,
       crease: ((ci === 2 ? 40 : 30) * Math.PI) / 180,
     });
+  // Same seeds at a lower detail: the same rock, fewer triangles.
   const shapes = CLASSES.map((c, ci) => Array.from({ length: c.shapes }, (_, i) => shape(ci, i, quality === 'low' ? c.lowDetail : c.detail)));
+  const lodShapes = CLASSES.map((c, ci) => Array.from({ length: c.shapes }, (_, i) => shape(ci, i, c.lodDetail)));
   // The debris field near the wreck is 500 m+ away: same shapes, fewer triangles.
   const farShapes = CLASSES.map((c, ci) => shape(ci, 0, c.farDetail));
 
   const placed = scatterBoulders(model, grid, seed * 7 + 1);
   const colliders: CircleCollider[] = [];
-  // Bucket by (size class, shape, region) so far-away clusters cull separately.
-  const buckets = new Map<string, { geo: BufferGeometry; far: boolean; list: Placed[] }>();
+  const nearLists = CLASSES.map((c) => Array.from({ length: c.shapes }, () => [] as Placed[]));
+  // Far clusters bucket by region so they cull separately.
+  const farBuckets = new Map<string, { geo: BufferGeometry; list: Placed[] }>();
   for (const p of placed) {
     const ci = CLASSES.findIndex((c) => p.size >= c.min);
     const c = CLASSES[ci];
-    const far = Math.hypot(p.x, p.z) > 420;
-    // Far away one shape per class is plenty (fewer draw calls).
-    const si = far ? 0 : p.shape % c.shapes;
-    const key = `${c.key}${si}${far ? 'f' : 'n'}`;
-    let b = buckets.get(key);
-    if (!b) buckets.set(key, (b = { geo: far ? farShapes[ci] : shapes[ci][si], far, list: [] }));
-    b.list.push(p);
+    if (Math.hypot(p.x, p.z) > 420) {
+      // Far away one shape per class is plenty (fewer draw calls).
+      let b = farBuckets.get(c.key);
+      if (!b) farBuckets.set(c.key, (b = { geo: farShapes[ci], list: [] }));
+      b.list.push(p);
+    } else {
+      nearLists[ci][p.shape % c.shapes].push(p);
+    }
     if (p.size > 0.8 && Math.hypot(p.x, p.z) < PLAY_RADIUS + 20) colliders.push({ kind: 'circle', x: p.x, z: p.z, r: p.size * 0.85 });
   }
+  const toMatrix = (p: Placed) => _m.compose(_p.set(p.x, p.y, p.z), p.q, _s.set(p.size, p.size * p.sy, p.size));
+  const toColor = (p: Placed) => {
+    const t = 0.82 + p.tint * 0.3;
+    return _c.setRGB(t, t * (0.97 + p.tint * 0.03), t * (0.94 + p.tint * 0.05));
+  };
+
+  const lodSets: LodSet[] = [];
+  CLASSES.forEach((c, ci) =>
+    nearLists[ci].forEach((list, si) => {
+      if (!list.length) return;
+      const set = new LodSet(shapes[ci][si], lodShapes[ci][si], material, list.length, `rocks-${c.key}${si}`, c.lodDist);
+      for (const p of list) set.add(toMatrix(p), toColor(p), p.x, p.z);
+      for (const m of [set.near, set.far]) {
+        m.castShadow = true;
+        m.receiveShadow = true;
+        m.userData.shadow = { reach: c.shadowReach } satisfies ShadowHint;
+        boulders.add(m);
+      }
+      lodSets.push(set);
+    }),
+  );
+  // Before the first update: everything at the far level, so bounds and stats are valid.
+  for (const s of lodSets) s.assign(Infinity, Infinity);
+
   const farMeshes: InstancedMesh[] = [];
-  for (const [key, b] of buckets) {
+  for (const [key, b] of farBuckets) {
     const mesh = new InstancedMesh(b.geo, material, b.list.length);
-    mesh.name = `rocks-${key}`;
+    mesh.name = `rocks-${key}-far`;
     b.list.forEach((p, i) => {
-      _s.set(p.size, p.size * p.sy, p.size);
-      _m.compose(_p.set(p.x, p.y, p.z), p.q, _s);
-      mesh.setMatrixAt(i, _m);
-      const t = 0.82 + p.tint * 0.3;
-      mesh.setColorAt(i, _c.setRGB(t, t * (0.97 + p.tint * 0.03), t * (0.94 + p.tint * 0.05)));
+      mesh.setMatrixAt(i, toMatrix(p));
+      mesh.setColorAt(i, toColor(p));
     });
     // Distant rocks are beyond the shadow-map range; the precomputed sun shadow covers them.
-    mesh.castShadow = !b.far;
+    mesh.castShadow = false;
     mesh.receiveShadow = true;
     mesh.computeBoundingSphere();
     mesh.computeBoundingBox();
-    if (b.far) farMeshes.push(mesh);
-    group.add(mesh);
+    farMeshes.push(mesh);
+    boulders.add(mesh);
   }
 
   const pebbles = createPebbleField(model, grid, material, quality, seed);
   group.add(pebbles.group);
-  return { group, colliders, count: placed.length, farMeshes, update: pebbles.update };
+  let lodX = Infinity;
+  let lodZ = Infinity;
+  return {
+    group,
+    colliders,
+    count: placed.length,
+    farMeshes,
+    update(camera) {
+      const c = camera.position;
+      if ((c.x - lodX) ** 2 + (c.z - lodZ) ** 2 > LOD_REBUCKET * LOD_REBUCKET) {
+        lodX = c.x;
+        lodZ = c.z;
+        for (const s of lodSets) s.assign(c.x, c.z);
+      }
+      pebbles.update(camera);
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------------------------
 // Pebble field following the camera
+//
+// The ground is split into 5 m cells; each cell's pebbles and stones are generated once from a
+// hash of the cell (deterministic, the same on both players' machines) and cached. Moving the
+// window just copies cached instances, faded out toward its edge so nothing pops.
 
 const PEBBLE_CELL = 5;
 const PEBBLE_RADIUS = 48;
+/** Stones closer than this to the camera use the detailed mesh (m). */
+const STONE_LOD_DIST = 14;
+/** Cached cells beyond this many are dropped (the window holds ~370). */
+const CELL_CACHE_MAX = 3000;
+
+interface PebbleCell {
+  n: number;
+  /** 0 pebble, 1 stone. */
+  kind: Uint8Array;
+  /** Unfaded size (m), for the edge fade's cut-off. */
+  size: Float32Array;
+  x: Float32Array;
+  z: Float32Array;
+  mats: Float32Array;
+  cols: Float32Array;
+}
 
 function createPebbleField(model: TerrainModel, grid: TerrainGrid, material: Material, quality: Quality, seed: number) {
   const group = new Object3D();
@@ -415,91 +572,148 @@ function createPebbleField(model: TerrainModel, grid: TerrainGrid, material: Mat
   const scale = quality === 'low' ? 0.5 : quality === 'medium' ? 0.8 : 1;
   const pebbleCap = Math.round(5200 * scale);
   const stoneCap = Math.round(1500 * scale);
-  const pebbleGeos = [0].map((i) => makeRockGeometry(seed * 41 + 200 + i, { detail: 0, cuts: 2, squash: 0.65, lumpiness: 1.2, crease: 1.2 }));
-  const stoneGeos = [0].map((i) =>
-    makeRockGeometry(seed * 43 + 300 + i, { detail: 2, cuts: 4, squash: 0.68, lumpiness: 1.2, crease: 0.65 }),
-  );
-  const mk = (geo: BufferGeometry, cap: number, cast: boolean) => {
+  const pebbleGeo = makeRockGeometry(seed * 41 + 200, { detail: 0, cuts: 2, squash: 0.65, lumpiness: 1.2, crease: 1.2 });
+  const stoneOpts = { cuts: 4, squash: 0.68, lumpiness: 1.2, crease: 0.65 };
+  const stoneGeo = makeRockGeometry(seed * 43 + 300, { detail: 2, ...stoneOpts });
+  const stoneLodGeo = makeRockGeometry(seed * 43 + 300, { detail: 1, ...stoneOpts });
+  const mk = (geo: BufferGeometry, cap: number, name: string) => {
     const m = new InstancedMesh(geo, material, cap);
+    m.name = name;
     m.instanceMatrix.setUsage(DynamicDrawUsage);
+    m.setColorAt(0, _c.setRGB(1, 1, 1));
+    m.instanceColor!.setUsage(DynamicDrawUsage);
     m.count = 0;
-    m.castShadow = cast;
     m.receiveShadow = true;
     m.frustumCulled = true;
     group.add(m);
     return m;
   };
-  const pebbleMeshes = pebbleGeos.map((g) => mk(g, Math.ceil(pebbleCap / pebbleGeos.length), false));
-  const stoneMeshes = stoneGeos.map((g) => mk(g, Math.ceil(stoneCap / stoneGeos.length), quality === 'high'));
-  const all = [...pebbleMeshes, ...stoneMeshes];
-  // Prime colour buffers.
-  for (const m of all) m.setColorAt(0, _c.setRGB(1, 1, 1));
+  const pebbles = mk(pebbleGeo, pebbleCap, 'pebbles');
+  const stones = mk(stoneGeo, stoneCap, 'stones-lod0');
+  const stonesFar = mk(stoneLodGeo, stoneCap, 'stones-lod1');
+  // Stone shadows are a few cm to a metre long: only the first cascade resolves them.
+  for (const m of [stones, stonesFar]) {
+    m.castShadow = quality === 'high';
+    m.userData.shadow = { reach: 2, cascades: 1 } satisfies ShadowHint;
+  }
 
-  let lastKey = '';
+  const cache = new Map<number, PebbleCell>();
+  const cellKey = (ix: number, iz: number) => (ix + 32768) * 65536 + (iz + 32768);
   const q = new Quaternion();
-  const fwd = new Vector3();
 
-  function rebuild(fx: number, fz: number) {
-    const counts = all.map(() => 0);
+  function generate(ix: number, iz: number): PebbleCell {
+    const tmpK: number[] = [];
+    const tmpS: number[] = [];
+    const tmpX: number[] = [];
+    const tmpZ: number[] = [];
+    const mats: number[] = [];
+    const cols: number[] = [];
+    const ccx = (ix + 0.5) * PEBBLE_CELL;
+    const ccz = (iz + 0.5) * PEBBLE_CELL;
+    const rng = mulberry32((Math.imul(ix, 73856093) ^ Math.imul(iz, 19349663) ^ seed) >>> 0);
+    const r = Math.hypot(ccx, ccz);
+    model.sample(ccx, ccz);
+    const rocky = model.rock;
+    const flat = r < OUTPOST_FLAT_RADIUS + 4;
+    // Density: patchy, more on rocky ground and around craters; sparse on the outpost apron.
+    const patch = hash01(ix >> 2, iz >> 2, seed + 5);
+    let dens = 0.45 + patch * 0.9 + rocky * 2.2;
+    if (flat) dens *= r < 24 ? 0.18 : 0.35;
+    const nPeb = Math.floor(dens * 9 * scale + rng());
+    const stoneDens = flat ? (r < 22 ? 0 : 0.3) : 0.25 + patch * 0.6 + rocky * 2.2;
+    const nStone = Math.floor(stoneDens * 2.4 * scale + rng());
+    for (let k = 0; k < nPeb + nStone; k++) {
+      const stone = k >= nPeb;
+      const x = ix * PEBBLE_CELL + rng() * PEBBLE_CELL;
+      const z = iz * PEBBLE_CELL + rng() * PEBBLE_CELL;
+      if (Math.hypot(x - LANDING_PAD.x, z - LANDING_PAD.z) < LANDING_PAD.radius + 1.5) continue;
+      const size = stone ? powerLaw(rng, 0.11, flat ? 0.18 : 0.32, 2.6) : powerLaw(rng, 0.025, flat ? 0.06 : 0.11, 2.4);
+      grid.normalAt(x, z, _n);
+      _n.lerp(_up, 0.3).normalize();
+      _q.setFromUnitVectors(_up, _n);
+      _q2.setFromAxisAngle(_up, rng() * Math.PI * 2);
+      q.copy(_q).multiply(_q2);
+      const sy = 0.85 + rng() * 0.5;
+      const y = grid.heightAt(x, z) - size * sy * (0.15 + rng() * 0.2);
+      _m.compose(_p.set(x, y, z), q, _s.set(size, size * sy, size));
+      for (const e of _m.elements) mats.push(e);
+      const t = 0.75 + rng() * 0.45;
+      cols.push(t, t * 0.98, t * 0.95);
+      tmpK.push(stone ? 1 : 0);
+      tmpS.push(size);
+      tmpX.push(x);
+      tmpZ.push(z);
+    }
+    return {
+      n: tmpK.length,
+      kind: Uint8Array.from(tmpK),
+      size: Float32Array.from(tmpS),
+      x: Float32Array.from(tmpX),
+      z: Float32Array.from(tmpZ),
+      mats: Float32Array.from(mats),
+      cols: Float32Array.from(cols),
+    };
+  }
+
+  const cellAt = (ix: number, iz: number) => {
+    const key = cellKey(ix, iz);
+    let c = cache.get(key);
+    if (!c) {
+      c = generate(ix, iz);
+      cache.set(key, c);
+    }
+    return c;
+  };
+
+  /** Fill the meshes from the cells around (fx, fz); stone detail by distance to the camera (cx, cz). */
+  function rebuild(fx: number, fz: number, cx: number, cz: number) {
+    const outs = [pebbles, stones, stonesFar];
+    const counts = [0, 0, 0];
+    const arrM = outs.map((m) => m.instanceMatrix.array as Float32Array);
+    const arrC = outs.map((m) => m.instanceColor!.array as Float32Array);
+    const caps = outs.map((m) => m.instanceMatrix.count);
     const cx0 = Math.floor((fx - PEBBLE_RADIUS) / PEBBLE_CELL);
     const cx1 = Math.floor((fx + PEBBLE_RADIUS) / PEBBLE_CELL);
     const cz0 = Math.floor((fz - PEBBLE_RADIUS) / PEBBLE_CELL);
     const cz1 = Math.floor((fz + PEBBLE_RADIUS) / PEBBLE_CELL);
+    const lod2 = STONE_LOD_DIST * STONE_LOD_DIST;
     for (let iz = cz0; iz <= cz1; iz++) {
       for (let ix = cx0; ix <= cx1; ix++) {
-        const ccx = (ix + 0.5) * PEBBLE_CELL;
-        const ccz = (iz + 0.5) * PEBBLE_CELL;
-        const dc = Math.hypot(ccx - fx, ccz - fz);
-        if (dc > PEBBLE_RADIUS) continue;
-        const rng = mulberry32((Math.imul(ix, 73856093) ^ Math.imul(iz, 19349663) ^ seed) >>> 0);
-        const r = Math.hypot(ccx, ccz);
-        model.sample(ccx, ccz);
-        const rocky = model.rock;
-        const flat = r < OUTPOST_FLAT_RADIUS + 4;
-        // Density: patchy, more on rocky ground and around craters; sparse on the outpost apron.
-        const patch = hash01(ix >> 2, iz >> 2, seed + 5);
-        let dens = 0.45 + patch * 0.9 + rocky * 2.2;
-        if (flat) dens *= r < 24 ? 0.18 : 0.35;
-        const nPeb = Math.floor(dens * 9 * scale + rng());
-        const stoneDens = flat ? (r < 22 ? 0 : 0.3) : 0.25 + patch * 0.6 + rocky * 2.2;
-        const nStone = Math.floor(stoneDens * 2.4 * scale + rng());
-        for (let k = 0; k < nPeb + nStone; k++) {
-          const stone = k >= nPeb;
-          const x = ix * PEBBLE_CELL + rng() * PEBBLE_CELL;
-          const z = iz * PEBBLE_CELL + rng() * PEBBLE_CELL;
-          if (Math.hypot(x - LANDING_PAD.x, z - LANDING_PAD.z) < LANDING_PAD.radius + 1.5) continue;
-          const list = stone ? stoneMeshes : pebbleMeshes;
-          const which = Math.floor(rng() * list.length);
-          const mesh = list[which];
-          const ci = (stone ? pebbleMeshes.length : 0) + which;
-          if (counts[ci] >= mesh.instanceMatrix.count) continue;
-          let size = stone ? powerLaw(rng, 0.11, flat ? 0.18 : 0.32, 2.6) : powerLaw(rng, 0.025, flat ? 0.06 : 0.11, 2.4);
+        if (Math.hypot((ix + 0.5) * PEBBLE_CELL - fx, (iz + 0.5) * PEBBLE_CELL - fz) > PEBBLE_RADIUS) continue;
+        const cell = cellAt(ix, iz);
+        for (let i = 0; i < cell.n; i++) {
+          const x = cell.x[i];
+          const z = cell.z[i];
           // Fade out at the window edge so rebuilds don't pop.
-          size *= smoothstep(PEBBLE_RADIUS, PEBBLE_RADIUS - 8, Math.hypot(x - fx, z - fz));
-          if (size < 0.012) continue;
-          grid.normalAt(x, z, _n);
-          _n.lerp(_up, 0.3).normalize();
-          _q.setFromUnitVectors(_up, _n);
-          _q2.setFromAxisAngle(_up, rng() * Math.PI * 2);
-          q.copy(_q).multiply(_q2);
-          const sy = 0.85 + rng() * 0.5;
-          const y = grid.heightAt(x, z) - size * sy * (0.15 + rng() * 0.2);
-          _s.set(size, size * sy, size);
-          _m.compose(_p.set(x, y, z), q, _s);
-          mesh.setMatrixAt(counts[ci], _m);
-          const t = 0.75 + rng() * 0.45;
-          mesh.setColorAt(counts[ci], _c.setRGB(t, t * 0.98, t * 0.95));
-          counts[ci]++;
+          const f = smoothstep(PEBBLE_RADIUS, PEBBLE_RADIUS - 8, Math.hypot(x - fx, z - fz));
+          if (cell.size[i] * f < 0.012) continue;
+          const o = cell.kind[i] === 0 ? 0 : (x - cx) ** 2 + (z - cz) ** 2 < lod2 ? 1 : 2;
+          const k = counts[o];
+          if (k >= caps[o]) continue;
+          counts[o]++;
+          const dst = arrM[o];
+          const d = k * 16;
+          const s = i * 16;
+          // Copy the matrix, scaling its basis by the fade.
+          for (let e = 0; e < 16; e++) dst[d + e] = cell.mats[s + e] * (e < 11 && e % 4 !== 3 ? f : 1);
+          arrC[o].set(cell.cols.subarray(i * 3, i * 3 + 3), k * 3);
         }
       }
     }
-    all.forEach((m, i) => {
-      m.count = counts[i];
-      m.instanceMatrix.needsUpdate = true;
-      if (m.instanceColor) m.instanceColor.needsUpdate = true;
-      m.computeBoundingSphere();
-    });
+    outs.forEach((m, i) => commit(m, counts[i]));
+    // Forget cells far behind.
+    if (cache.size > CELL_CACHE_MAX) {
+      for (const [key, c] of cache) {
+        const ix = Math.floor(key / 65536) - 32768;
+        const iz = (key % 65536) - 32768;
+        if (Math.hypot((ix + 0.5) * PEBBLE_CELL - fx, (iz + 0.5) * PEBBLE_CELL - fz) > PEBBLE_RADIUS * 3) cache.delete(key);
+        void c;
+      }
+    }
   }
+
+  const last = [NaN, NaN, NaN, NaN];
+  const fwd = new Vector3();
 
   function update(camera: Camera) {
     camera.getWorldDirection(fwd);
@@ -524,10 +738,17 @@ function createPebbleField(model: TerrainModel, grid: TerrainGrid, material: Mat
       fx = c.x + (dx / d) * 28;
       fz = c.z + (dz / d) * 28;
     }
-    const key = `${Math.round(fx / 8)},${Math.round(fz / 8)}`;
-    if (key === lastKey) return;
-    lastKey = key;
-    rebuild(Math.round(fx / 8) * 8, Math.round(fz / 8) * 8);
+    // Rebuild when the window centre (8 m grid) or the camera (6 m grid, for the stone detail) moves.
+    const kfx = Math.round(fx / 8);
+    const kfz = Math.round(fz / 8);
+    const kcx = Math.round(c.x / 6);
+    const kcz = Math.round(c.z / 6);
+    if (kfx === last[0] && kfz === last[1] && kcx === last[2] && kcz === last[3]) return;
+    last[0] = kfx;
+    last[1] = kfz;
+    last[2] = kcx;
+    last[3] = kcz;
+    rebuild(kfx * 8, kfz * 8, c.x, c.z);
   }
 
   return { group, update };

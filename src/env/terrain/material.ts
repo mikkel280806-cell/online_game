@@ -23,6 +23,18 @@ export function setTerrainDebug(mode: number): void {
   debugUniform.value = mode;
 }
 
+const allMaterials: MeshStandardMaterial[] = [];
+/** Profiling: replace the whole ground/rock surface shader with flat grey (measures its cost). */
+export function setTerrainFlatShading(on: boolean): void {
+  for (const m of allMaterials) {
+    const has = 'TERRAIN_FLAT' in m.defines!;
+    if (has === on) continue;
+    if (on) m.defines!.TERRAIN_FLAT = '';
+    else delete m.defines!.TERRAIN_FLAT;
+    m.needsUpdate = true;
+  }
+}
+
 const PARS_FRAGMENT = /* glsl */ `
 uniform sampler2D tRegA;
 uniform sampler2D tRegN;
@@ -349,7 +361,16 @@ export function createTerrainMaterial({ textures, shadow, kind }: TerrainMateria
       );
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${PARS_FRAGMENT}`)
-      .replace('#include <map_fragment>', 'tSunVis = terrainSunVisibility(vTWorldPos);\nterrainSurface();\ndiffuseColor.rgb *= tAlbedo;')
+      .replace(
+        '#include <map_fragment>',
+        `#ifdef TERRAIN_FLAT
+          tAlbedo = vec3(0.45); tRough = 1.0; tWorldN = normalize(vTWorldNormal); tAO = 1.0;
+        #else
+          tSunVis = terrainSunVisibility(vTWorldPos);
+          terrainSurface();
+        #endif
+        diffuseColor.rgb *= tAlbedo;`,
+      )
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = roughness * tRough;')
       .replace('#include <normal_fragment_maps>', 'normal = normalize((viewMatrix * vec4(tWorldN, 0.0)).xyz);')
       .replace('#include <lights_fragment_begin>', lights)
@@ -359,5 +380,6 @@ export function createTerrainMaterial({ textures, shadow, kind }: TerrainMateria
       );
   };
   mat.customProgramCacheKey = () => `terrain-${kind}-v1`;
+  allMaterials.push(mat);
   return mat;
 }
