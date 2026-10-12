@@ -329,9 +329,13 @@ async function runShot(name: string): Promise<void> {
     default:
       rig.snapTo(world.spawnPoints[0]);
   }
+  const gl = renderer.gl.getContext();
+  const pixel = new Uint8Array(4);
   for (let i = 0; i < 6; i++) {
     world.update(T + i / 60, camera);
     renderer.render(1 / 60, 16);
+    // Wait for the GPU to finish (software renderers queue a lot of work).
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
     await new Promise((r) => requestAnimationFrame(r));
   }
   const info = renderer.gl.info.render;

@@ -40,7 +40,7 @@ for (const name of names) {
   const [shotName, extra] = name.split('&', 2);
   await page.goto(`${base}/?shot=${shotName}${extra ? '&' + name.slice(shotName.length + 1) : ''}`);
   await page.waitForFunction(() => window.__shotReady === true, null, { timeout: 300_000 });
-  await page.screenshot({ path: `${outDir}/${name.replace(/[&=]/g, '_')}.png` });
+  await page.screenshot({ path: `${outDir}/${name.replace(/[&=]/g, '_')}.png`, timeout: 180_000 });
   console.log(`${name}: ${Date.now() - t0} ms`);
 }
 await browser.close();

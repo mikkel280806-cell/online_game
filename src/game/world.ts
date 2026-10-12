@@ -2,7 +2,7 @@ import { Scene, Vector3, type Object3D, type PerspectiveCamera, type WebGLRender
 import { installAtmosphere } from '../env/atmosphere';
 import { PLAY_RADIUS, SPAWN_POINTS } from '../env/layout';
 import { createLighting, type Lighting } from '../env/lighting';
-import { createProps } from '../env/props';
+import { createProps, padSurfaceHeight } from '../env/props';
 import { createSky, type Sky } from '../env/sky';
 import { createTerrain } from '../env/terrain';
 import type { HeightFn, Props, Quality, Terrain } from '../env/types';
@@ -41,7 +41,8 @@ export function createWorld(gl: WebGLRenderer, camera: PerspectiveCamera, qualit
   const lighting = createLighting(gl, scene, camera, sky, quality);
   lighting.register(scene);
 
-  const heightAt = terrain.heightAt;
+  // Walkable ground: the terrain, plus the landing pad's raised deck.
+  const heightAt: HeightFn = (x, z) => terrain.heightAt(x, z) + padSurfaceHeight(x, z);
   const spawnPoints = SPAWN_POINTS.map((p) => new Vector3(p.x, heightAt(p.x, p.z), p.z));
   console.info(`[world] built in ${(performance.now() - t0).toFixed(0)} ms`);
 
