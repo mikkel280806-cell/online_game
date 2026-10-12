@@ -2,18 +2,18 @@
 // wreck of the Meridian with its debris field. All static geometry is merged by material
 // (a dozen draw calls); light is mostly HDR emissive + glow sprites, plus three real lights.
 
-import { DoubleSide, Group, Mesh, PointLight, SpotLight, Vector3, type BufferGeometry, type Material } from 'three';
+import { DoubleSide, Group, Mesh, PointLight, SpotLight, Vector3, type BufferGeometry, type Material, type Matrix4 } from 'three';
 import { LANDING_PAD } from '../layout';
-import type { EnvContext, HeightFn, Props } from '../types';
-import { Asm, PartBuilder, TY, newKit } from './builder';
+import type { EnvContext, HeightFn, Props, Quality } from '../types';
+import { Asm, PartBuilder, TY, newKit, type Kit } from './builder';
 import { ConeSet, GlowSet } from './fx';
 import { computeColliders, PAD_BASE_RADIUS, SHIP } from './layout';
 import { createCanopyGlass, createHardSurfaceMaterial, getSurfaceTextures } from './materials';
-import { buildOutpost } from './outpost';
+import { buildOutpost, type OutpostBuild } from './outpost';
 import { buildPad, padMarkSpec } from './pad';
-import { buildShip } from './ship';
-import { createDecalAtlas, createPadMarks, createSolarTexture } from './textures';
-import { buildWreck } from './wreck';
+import { buildShip, type ShipBuild } from './ship';
+import { createDecalAtlas, createPadMarks, createSolarTexture, type DecalAtlas } from './textures';
+import { buildWreck, type WreckBuild } from './wreck';
 
 export { padSurfaceHeight, PAD_TOP } from './layout';
 
@@ -27,6 +27,54 @@ export interface PropsStats {
 
 /** Filled in by createProps (startup cost and size), for perf overlays and look-dev. */
 export const propsStats: PropsStats = { ms: 0, triangles: 0, meshes: 0, stages: {} };
+
+/** All prop geometry, before materials: builders per material, light effects and anchors. */
+export interface PropGeometry {
+  kit: Kit;
+  padB: PartBuilder;
+  shellB: PartBuilder;
+  glassB: PartBuilder;
+  dishB: PartBuilder;
+  solarB: PartBuilder;
+  glows: GlowSet;
+  cones: ConeSet;
+  ship: ShipBuild;
+  shipM: Matrix4;
+  outpost: OutpostBuild;
+  wreck: WreckBuild | null;
+}
+
+/**
+ * Builds every prop into per-material builders. Pure geometry (no WebGL, no DOM), so tests can
+ * build the real outpost and check it (watertightness, collision footprints).
+ */
+export function buildPropGeometry(heightAt: HeightFn, atlas: DecalAtlas, quality: Quality, opts: { wreck?: boolean; stage?: (name: string) => void } = {}): PropGeometry {
+  const stage = opts.stage ?? (() => {});
+  const kit = newKit();
+  const padB = new PartBuilder();
+  const shellB = new PartBuilder();
+  const glassB = new PartBuilder();
+  const dishB = new PartBuilder();
+  const solarB = new PartBuilder(true);
+  padB.name = 'pad';
+  shellB.name = 'shell';
+  glassB.name = 'glass';
+  dishB.name = 'dish';
+  solarB.name = 'solar';
+  const glows = new GlowSet();
+  const cones = new ConeSet();
+
+  buildPad(padB, kit, glows, heightAt);
+  stage('pad');
+  const shipM = TY(SHIP.x, heightAt(SHIP.x, SHIP.z) + SHIP.y, SHIP.z, SHIP.yaw);
+  const ship = buildShip(new Asm(kit, shipM), shellB, glassB, glows, atlas);
+  stage('ship');
+  const outpost = buildOutpost(kit, dishB, solarB, glows, cones, atlas, heightAt);
+  stage('outpost');
+  const wreck = opts.wreck === false ? null : buildWreck(heightAt, glows, kit.decal, atlas, quality);
+  stage('wreck');
+  return { kit, padB, shellB, glassB, dishB, solarB, glows, cones, ship, shipM, outpost, wreck };
+}
 
 export function createProps(ctx: EnvContext, heightAt: HeightFn): Props {
   const t0 = performance.now();
@@ -45,25 +93,7 @@ export function createProps(ctx: EnvContext, heightAt: HeightFn): Props {
   const group = new Group();
   group.name = 'props';
 
-  const kit = newKit();
-  const padB = new PartBuilder();
-  const shellB = new PartBuilder();
-  const glassB = new PartBuilder();
-  const dishB = new PartBuilder();
-  const solarB = new PartBuilder(true);
-  const glows = new GlowSet();
-  const cones = new ConeSet();
-
-  buildPad(padB, kit, glows, heightAt);
-  stage('pad');
-  const shipM = TY(SHIP.x, heightAt(SHIP.x, SHIP.z) + SHIP.y, SHIP.z, SHIP.yaw);
-  const ship = buildShip(new Asm(kit, shipM), shellB, glassB, glows, atlas);
-  const umbilical = ship.umbilical.clone().applyMatrix4(shipM);
-  stage('ship');
-  const outpost = buildOutpost(kit, dishB, solarB, glows, cones, atlas, heightAt, umbilical);
-  stage('outpost');
-  const wreck = buildWreck(heightAt, glows, kit.decal, atlas, ctx.quality);
-  stage('wreck');
+  const { kit, padB, shellB, glassB, dishB, solarB, glows, cones, ship, shipM, outpost, wreck } = buildPropGeometry(heightAt, atlas, ctx.quality, { stage });
 
   // ---- materials ------------------------------------------------------------------------------
   const hardMat = createHardSurfaceMaterial(tex, { tile: 3.2, dust: 0.75, wear: 0.55 });
@@ -81,7 +111,7 @@ export function createProps(ctx: EnvContext, heightAt: HeightFn): Props {
     tile: 16,
     dust: 0.85,
     wear: 0.5,
-    groundY: wreck.groundY,
+    groundY: wreck?.groundY ?? 0,
     grimeHeight: 9,
     dustScale: 0.09,
     side: DoubleSide,
@@ -111,7 +141,7 @@ export function createProps(ctx: EnvContext, heightAt: HeightFn): Props {
   add(kit.decal.build(), decalMat, false, 'props-decals');
   add(solarB.build(), solarMat, true, 'props-solar');
   add(glassB.build(), glassMat, true, 'props-canopy');
-  add(wreck.builder.build(), wreckMat, false, 'props-wreck'); // beyond the shadow distance
+  add(wreck?.builder.build() ?? null, wreckMat, false, 'props-wreck'); // beyond the shadow distance
 
   // Comms dish: its own mesh so it can turn.
   const dish = add(dishB.build(), hardMat, true, 'props-dish');

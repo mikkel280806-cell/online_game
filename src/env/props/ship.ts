@@ -3,10 +3,10 @@
 // open rear cargo ramp down to the pad. Built in ship space (nose -Z, ramp +Z) and transformed
 // into the world, so it merges with the outpost's geometry by material.
 
-import { Color, Float32BufferAttribute, Matrix4, Vector3 } from 'three';
+import { Color, Float32BufferAttribute, Matrix4, Vector3, type BufferGeometry } from 'three';
 import { Asm, PartBuilder, T, facing, type Kit } from './builder';
 import { addDecal, GlowMode, type GlowSet } from './fx';
-import { RAMP_LIP_Z, WREN } from './layout';
+import { RAMP_LIP_Z, WREN, WREN_UMBILICAL } from './layout';
 import { bcyl, cyl, extrude, hullPoint, lathe, paramSurface, rbox, sphere, stationAt, strut, tube, type Station } from './shapes';
 import type { DecalAtlas } from './textures';
 
@@ -105,11 +105,19 @@ function bottomAt(stations: Station[], z: number, x: number): number {
   return st.y - st.hb * Math.pow(s, 2 / st.nb);
 }
 
+/** Top-surface height of a loft at (x, z) (clamped to the station's half-width). */
+function topAt(stations: Station[], z: number, x: number): number {
+  const st = stationAt(stations, uAtZ(stations, z), tmpSt);
+  const hw = st.w / 2;
+  const c = Math.min(Math.abs(x - (st.x ?? 0)) / hw, 0.999);
+  const cc = Math.pow(c, st.nt / 2);
+  const s = Math.sqrt(1 - cc * cc);
+  return st.y + st.ht * Math.pow(s, 2 / st.nt);
+}
+
 export interface ShipBuild {
   /** Ship-space position of the cargo bay light (for the real PointLight). */
   bayLight: Vector3;
-  /** Ship-space umbilical socket on the port side. */
-  umbilical: Vector3;
 }
 
 /**
@@ -131,8 +139,9 @@ export function buildShip(asm: Asm, shell: PartBuilder, glass: PartBuilder, glow
   };
   const fuseF = (u: number, v: number, out: Vector3) => hullPoint(FUSE, u, v, out);
   // Upper hull: off-white. Lower hull: gunmetal. Split along a chine below the centre line.
-  shell.add(paramSurface(fuseF, 110, 46, { flip: true, vRange: [-0.045, 0.545], keep: keepFuse }), hullWhite, M);
-  shell.add(paramSurface(fuseF, 110, 30, { flip: true, vRange: [0.545, 0.955], keep: keepFuse }), hullGun, M);
+  // (The skin is one surface: its two halves, the end domes and the framed cargo opening seal it.)
+  shell.add(paramSurface(fuseF, 110, 46, { flip: true, vRange: [-0.045, 0.545], keep: keepFuse }), { ...hullWhite, open: true }, M);
+  shell.add(paramSurface(fuseF, 110, 30, { flip: true, vRange: [0.545, 0.955], keep: keepFuse }), { ...hullGun, open: true }, M);
 
   // Chine rails (hazard yellow strip on the left/right where paint changes).
   for (const a of [-0.045 * Math.PI * 2, 0.545 * Math.PI * 2]) {
@@ -157,7 +166,7 @@ export function buildShip(asm: Asm, shell: PartBuilder, glass: PartBuilder, glow
     { flip: true },
   );
   // Ensure the canopy faces outward (param orientation differs from the hull's).
-  glass.add(canopy, { color: '#ffffff', rough: 0.05, panel: 0 }, M);
+  glass.add(canopy, { color: '#ffffff', rough: 0.05, panel: 0, open: true }, M);
   // Frame: outline + mullions.
   {
     const frame = { color: GUN, metal: 0.6, rough: 0.4, panel: 0.3 };
@@ -185,9 +194,13 @@ export function buildShip(asm: Asm, shell: PartBuilder, glass: PartBuilder, glow
       12,
       { flip: true },
     );
-    shell.add(ag, { color: '#2a2d31', metal: 0.2, rough: 0.78, panel: 0.4 }, M);
+    shell.add(ag, { color: '#2a2d31', metal: 0.2, rough: 0.78, panel: 0.4, open: true }, M);
     const cap = paramSurface((u, v, out) => hullAt(FUSE, -11 + u * 0.32, v * Math.PI * 2, 0.008, out), 3, 40, { flip: true });
-    shell.add(cap, { color: GUN, metal: 0.55, rough: 0.4, panel: 0.3 }, M);
+    shell.add(cap, { color: GUN, metal: 0.55, rough: 0.4, panel: 0.3, open: true }, M);
+    // The loft stops at finite end stations: close both ends with shallow domes so the hull is
+    // sealed (an open nose or tail let you look straight into, and through, the fuselage).
+    shell.add(endDome(FUSE, 0, -0.16, 0.008), { color: GUN, metal: 0.55, rough: 0.4, panel: 0.3, open: true }, M);
+    shell.add(endDome(FUSE, 1, 0.12, 0), { color: GUN2, metal: 0.5, rough: 0.45, panel: 0.4, open: true }, M);
   }
 
   // ---- nacelles -----------------------------------------------------------------------------
@@ -211,21 +224,32 @@ export function buildShip(asm: Asm, shell: PartBuilder, glass: PartBuilder, glow
       c.multiplyScalar(1 - 0.55 * k * k);
     };
     const invM = nm.clone().invert();
-    kit.hard.add(paramSurface(nacF, 40, 34, { flip: true, vRange: [-0.06, 0.56] }), hullWhite, nm, soot);
-    kit.hard.add(paramSurface(nacF, 40, 22, { flip: true, vRange: [0.56, 0.94] }), hullGun, nm, soot);
+    kit.hard.add(paramSurface(nacF, 40, 34, { flip: true, vRange: [-0.06, 0.56] }), { ...hullWhite, open: true }, nm, soot);
+    kit.hard.add(paramSurface(nacF, 40, 22, { flip: true, vRange: [0.56, 0.94] }), { ...hullGun, open: true }, nm, soot);
     const nac = new Asm(kit, nm);
     // Intake: yellow lip ring, dark duct, spinner and fan blades.
-    nac.hard(lathe([[0.62, -0.1], [0.84, -0.06], [0.92, 0.06], [0.84, 0.2], [0.7, 0.24]], 32), { color: YEL, rough: 0.45, metal: 0.2, panel: 0.6 }, T(0, 0, WREN.nacelleZ0 + 0.02, -Math.PI / 2, 0, 0));
+    // (Lathe profiles here are closed loops with the material on their left, so every face
+    // points out of the solid. Lathe +Y maps to ship -Z, i.e. forward, under this rotation.)
+    const intake = T(0, 0, WREN.nacelleZ0 + 0.02, -Math.PI / 2, 0, 0);
+    nac.hard(lathe([[0.62, -0.1], [0.84, -0.06], [0.92, 0.06], [0.84, 0.2], [0.7, 0.24], [0.6, 0.12], [0.6, -0.08], [0.62, -0.1]], 32), { color: YEL, rough: 0.45, metal: 0.2, panel: 0.6 }, intake);
+    // Duct liner from the lip back to the fan face: you look down a tube, not into the nacelle.
+    nac.small(lathe([[0.6, -0.45], [0.72, -0.45], [0.72, -0.02], [0.6, -0.02], [0.6, -0.45]], 32), { color: '#1c1d1f', rough: 0.55, metal: 0.5, panel: 0 }, intake);
     nac.small(bcyl(0.74, 0.06, 32), { color: '#141516', rough: 0.6, metal: 0.4, panel: 0 }, T(0, 0, WREN.nacelleZ0 + 0.38, Math.PI / 2, 0, 0));
-    nac.small(lathe([[0.0, 0.42], [0.12, 0.34], [0.22, 0.12], [0.24, 0.0]], 16), { color: GUN, metal: 0.8, rough: 0.3, panel: 0 }, T(0, 0, WREN.nacelleZ0 + 0.35, -Math.PI / 2, 0, 0));
+    nac.small(lathe([[0, 0.0], [0.24, 0.0], [0.22, 0.12], [0.12, 0.34], [0.0, 0.42]], 16), { color: GUN, metal: 0.8, rough: 0.3, panel: 0 }, T(0, 0, WREN.nacelleZ0 + 0.35, -Math.PI / 2, 0, 0));
+    // Bulkheads seal both ends of the nacelle skin behind the fan and ahead of the nozzle.
+    kit.hard.add(stationDisc(NAC, WREN.nacelleZ0 + 0.5, 0.012, true), { color: '#1c1d1f', rough: 0.6, metal: 0.4, panel: 0, open: true }, nm);
+    kit.hard.add(stationDisc(NAC, WREN.nacelleZ1 - 0.12, 0.012, false), { color: '#1c1d1f', rough: 0.6, metal: 0.4, panel: 0, open: true }, nm);
     for (let i = 0; i < 14; i++) {
       const a = (i / 14) * Math.PI * 2;
       nac.small(rbox(0.05, 0.46, 0.14, 0.01), { color: '#55585c', metal: 0.9, rough: 0.3, panel: 0 }, T(Math.cos(a) * 0.46, Math.sin(a) * 0.46, WREN.nacelleZ0 + 0.3, 0.35, 0, a - Math.PI / 2));
     }
     // Nozzle: bell, inner glowing core (residual heat), outer petals ring.
     const nz = WREN.nacelleZ1;
-    nac.hard(lathe([[0.76, 0], [0.74, 0.25], [0.7, 0.62], [0.66, 0.66], [0.6, 0.6], [0.58, 0.1]], 32), { color: '#3a3532', metal: 0.85, rough: 0.35, panel: 0.2 }, T(0, 0, nz - 0.08, Math.PI / 2, 0, 0));
-    nac.small(lathe([[0.0, 0.2], [0.35, 0.12], [0.56, 0.0]], 24), { color: '#ff6a25', rough: 0.6, panel: 0, glow: 1.4 }, T(0, 0, nz + 0.12, Math.PI / 2, 0, 0));
+    // (Lathe +Y maps to ship +Z, i.e. aft, under this rotation.)
+    nac.hard(lathe([[0.76, 0], [0.74, 0.25], [0.7, 0.62], [0.66, 0.66], [0.6, 0.6], [0.58, 0.1], [0.6, 0], [0.76, 0]], 32), { color: '#3a3532', metal: 0.85, rough: 0.35, panel: 0.2 }, T(0, 0, nz - 0.08, Math.PI / 2, 0, 0));
+    nac.small(lathe([[0, -0.04], [0.56, -0.04], [0.56, 0.0], [0.35, 0.12], [0.0, 0.2]], 24), { color: '#e8561c', rough: 0.6, panel: 0, glow: 0.45 }, T(0, 0, nz + 0.12, Math.PI / 2, 0, 0)); // residual heat: a dull ember
+    // Aft trim ring closing the slot between the nacelle skin and the bell.
+    nac.hard(lathe([[0.62, -0.16], [0.84, -0.16], [0.86, -0.12], [0.86, 0.04], [0.82, 0.08], [0.62, 0.08], [0.62, -0.16]], 32), { color: '#2e2a28', metal: 0.8, rough: 0.4, panel: 0.2 }, T(0, 0, nz, Math.PI / 2, 0, 0));
     glows.add(nac.pt(0, 0, nz + 0.45), '#ff6a2a', 0.9, 1.2, GlowMode.Steady, 0, 2);
     for (let i = 0; i < 16; i++) {
       const a = (i / 16) * Math.PI * 2;
@@ -238,10 +262,11 @@ export function buildShip(asm: Asm, shell: PartBuilder, glass: PartBuilder, glow
     // Navigation light on the outboard side: red port, green starboard.
     const navCol = side < 0 ? '#ff2a1a' : '#2aff6a';
     nac.small(sphere(0.09, 10, 8), { color: navCol, rough: 0.2, panel: 0, glow: 3 }, T(side * 1.1, 0.15, 1.0));
-    glows.add(nac.pt(side * 1.2, 0.15, 1.0), navCol, 5, 0.45, GlowMode.Steady, 0, 1.5);
-    // "07" on the outboard nacelle flank, registration below.
-    addDecal(kit, atlas, 'N07', 0.95, '#2b2e33', W(T(nx + side * 1.1, ny + 0.38, 5.2, 0, side * Math.PI / 2, 0)));
-    addDecal(kit, atlas, 'REG', 2.6, '#2b2e33', W(T(nx + side * 1.095, ny - 0.15, 5.2, 0, side * Math.PI / 2, 0)));
+    glows.add(nac.pt(side * 1.2, 0.15, 1.0), navCol, 5, 0.45, GlowMode.Steady, 0, 1.5, nac.dir(side, 0, 0));
+    // "07" on the outboard nacelle flank, registration below: wrapped onto the curved skin
+    // (flat quads floated up to 7 cm off it).
+    hullDecal(kit.decal, nm, atlas, 'N07', 5.2, side > 0 ? 0.25 : Math.PI - 0.25, 0.95, side, '#2b2e33', NAC);
+    hullDecal(kit.decal, nm, atlas, 'REG', 5.2, side > 0 ? -0.07 : Math.PI + 0.07, 2.6, side, '#2b2e33', NAC);
   }
 
   // ---- pylons ---------------------------------------------------------------------------------
@@ -267,7 +292,7 @@ export function buildShip(asm: Asm, shell: PartBuilder, glass: PartBuilder, glow
     for (let k = 0; k < 10; k++) s.small(rbox(0.85, 0.05, 0.07, 0.015), { color: '#1d1f22', metal: 0.6, rough: 0.5, panel: 0 }, T(0, 0.22, -3.6 + k * 0.16));
     s.small(cyl(0.012, 0.025, 1.6, 6), { color: '#202020', metal: 0.5, rough: 0.4, panel: 0 }, T(0.3, 1.0, -0.4));
     s.small(sphere(0.04, 8, 6), { color: '#202020', rough: 0.4, panel: 0 }, T(0.3, 1.8, -0.4));
-    s.hard(lathe([[0.32, 0], [0.3, 0.12], [0.2, 0.26], [0, 0.32]], 20), { color: '#d8d6cf', rough: 0.35, panel: 0 }, T(0, 0.2, 0.9));
+    s.hard(lathe([[0, 0], [0.32, 0], [0.3, 0.12], [0.2, 0.26], [0, 0.32]], 20), { color: '#d8d6cf', rough: 0.35, panel: 0 }, T(0, 0.19, 0.9));
     s.small(rbox(0.36, 0.08, 0.6, 0.03), { color: GUN, metal: 0.6, rough: 0.4 }, T(-0.25, 0.23, -1.9));
     // Red anti-collision beacon.
     s.small(cyl(0.09, 0.11, 0.16, 12), { color: '#ff2a1a', rough: 0.2, panel: 0, glow: 1.5 }, T(0, 0.3, 3.6));
@@ -276,16 +301,20 @@ export function buildShip(asm: Asm, shell: PartBuilder, glass: PartBuilder, glow
 
   // ---- V-tail fins -----------------------------------------------------------------------------
   for (const side of [-1, 1]) {
-    const outline: [number, number][] = [
-      [6.0, 0],
-      [9.9, 0],
-      [10.95, 2.4],
-      [9.2, 2.45],
-    ];
-    const fin = extrude(outline.map(([z, y]) => [z, y] as [number, number]), 0.18, 0.05, 1);
+    const roll = side * -0.42;
+    const baseY = hullAt(FUSE, 8.0, Math.PI / 2).y - 0.12;
+    // The root edge follows the hull's top surface (it falls away toward the tail) and is sunk
+    // 15 cm into it, so the fin never floats above the skin.
+    const root: [number, number][] = [];
+    for (let z = 5.9; z <= 10.0; z += 0.41) {
+      const yl = (topAt(FUSE, z, side * 0.62) - baseY) / Math.cos(roll) - 0.15;
+      root.push([z, yl]);
+    }
+    const outline: [number, number][] = [...root, [10.95, 2.4], [9.2, 2.45]];
+    const fin = extrude(outline, 0.18, 0.05, 1);
     // Extrude lies in XY (x = z coordinate here, y = height), thickness along Z → rotate to ship.
     fin.rotateY(-Math.PI / 2);
-    const fm = W(T(side * 0.62, hullAt(FUSE, 8.0, Math.PI / 2).y - 0.12, 0, 0, 0, side * -0.42));
+    const fm = W(T(side * 0.62, baseY, 0, 0, 0, roll));
     kit.hard.add(fin, hullWhite, fm);
     const tip = new Vector3(0, 2.42, 10.1).applyMatrix4(fm);
     kit.small.add(sphere(0.06, 8, 6), { color: '#ffffff', rough: 0.2, panel: 0, glow: 3 }, T(tip.x, tip.y, tip.z));
@@ -314,7 +343,7 @@ export function buildShip(asm: Asm, shell: PartBuilder, glass: PartBuilder, glow
       g.hard(rbox(1.25, 0.14, 0.78, 0.05, 2), metalGun, T(0, 0.09, 0));
       g.hard(rbox(0.9, 0.12, 0.4, 0.04), metalGun, T(0, 0.24, 0));
     } else {
-      g.hard(lathe([[0.64, 0], [0.64, 0.08], [0.58, 0.14], [0.28, 0.24], [0.2, 0.3]], 24), metalGun, T(0, 0, 0));
+      g.hard(lathe([[0, 0], [0.64, 0], [0.64, 0.08], [0.58, 0.14], [0.28, 0.24], [0.2, 0.3], [0, 0.3]], 24), metalGun, T(0, 0, 0));
       g.small(bcyl(0.66, 0.02, 24), rubber, T(0, 0.01, 0));
     }
     return g;
@@ -323,15 +352,19 @@ export function buildShip(asm: Asm, shell: PartBuilder, glass: PartBuilder, glow
     const gx = side * WREN.nacelleX;
     const g = gear(gx, WREN.mainGearZ, WREN.nacelleY - 0.95, false);
     // Side and drag braces into the nacelle belly.
-    kit.hard.add(strut(new Vector3(-side * 0.75, 1.72, 0), new Vector3(0, 0.92, 0), 0.07, 8), metalGun, g.m);
+    kit.hard.add(strut(new Vector3(-side * 0.75, 1.92, 0), new Vector3(0, 0.92, 0), 0.07, 8), metalGun, g.m);
     kit.hard.add(strut(new Vector3(0, 1.75, -1.2), new Vector3(0, 0.98, 0), 0.07, 8), metalGun, g.m);
     // Gear bay doors hanging open.
     for (const d of [-1, 1]) g.hard(rbox(0.05, 0.6, 1.5, 0.02), hullGun, T(d * 0.5, 1.55, -0.2, 0, 0, d * 0.35));
   }
   {
-    const g = gear(0, WREN.noseGearZ, 1.32, true);
-    kit.hard.add(strut(new Vector3(0, 1.3, -0.9), new Vector3(0, 0.85, 0), 0.06, 8), metalGun, g.m);
-    for (const d of [-1, 1]) g.hard(rbox(0.04, 0.55, 1.2, 0.02), hullGun, T(d * 0.62, 1.12, -0.3, 0, 0, d * 0.25));
+    // Leg tops run 15 cm up into the belly (the hull bottom is ~1.4 m up here).
+    const g = gear(0, WREN.noseGearZ, bottomAt(FUSE, WREN.noseGearZ, 0.34) + 0.12, true);
+    kit.hard.add(strut(new Vector3(0, bottomAt(FUSE, WREN.noseGearZ - 0.9, 0) + 0.1, -0.9), new Vector3(0, 0.85, 0), 0.06, 8), metalGun, g.m);
+    for (const d of [-1, 1]) {
+      const hinge = bottomAt(FUSE, WREN.noseGearZ - 0.3, 0.62) + 0.04;
+      g.hard(rbox(0.04, 0.55, 1.2, 0.02), hullGun, T(d * 0.62, hinge - 0.27 * Math.cos(0.25), -0.3, 0, 0, d * 0.25));
+    }
   }
 
   // ---- belly lift thrusters (faint glow) and chin sensor --------------------------------------
@@ -339,7 +372,7 @@ export function buildShip(asm: Asm, shell: PartBuilder, glass: PartBuilder, glow
     const z = -5.2;
     const x = side * 1.15;
     const y = bottomAt(FUSE, z, x);
-    asm.hard(lathe([[0.42, 0.0], [0.4, -0.1], [0.36, -0.22], [0.3, -0.24], [0.28, -0.05]], 20), { color: '#34302d', metal: 0.85, rough: 0.35, panel: 0.2 }, T(x, y + 0.02, z));
+    asm.hard(lathe([[0, -0.05], [0.28, -0.05], [0.3, -0.24], [0.36, -0.22], [0.4, -0.1], [0.42, 0.0], [0, 0]], 20), { color: '#34302d', metal: 0.85, rough: 0.35, panel: 0.2 }, T(x, y + 0.02, z));
     asm.small(bcyl(0.27, 0.02, 16), { color: '#ff6a25', rough: 0.6, panel: 0, glow: 0.9 }, T(x, y - 0.14, z));
   }
   asm.hard(sphere(0.34, 18, 12), { color: '#1c2026', metal: 0.3, rough: 0.12, panel: 0 }, T(0, bottomAt(FUSE, -9.2, 0) + 0.05, -9.2));
@@ -393,6 +426,9 @@ export function buildShip(asm: Asm, shell: PartBuilder, glass: PartBuilder, glow
         kit.small.add(rbox(0.06, 0.55, 0.05, 0.012), { color: '#1d1f22', metal: 0.6, rough: 0.5, panel: 0 }, m);
       }
     }
+    // Ground-power socket on the port flank, where the pad's umbilical plugs in.
+    asm.small(rbox(0.16, 0.36, 0.36, 0.03), metalGun, T(WREN_UMBILICAL.x - 0.06, WREN_UMBILICAL.y, WREN_UMBILICAL.z));
+    asm.small(rbox(0.06, 0.1, 0.24, 0.015), { color: YEL, rough: 0.5, panel: 0.3 }, T(WREN_UMBILICAL.x - 0.13, WREN_UMBILICAL.y + 0.22, WREN_UMBILICAL.z));
     // Belly blade antenna and a belly beacon.
     asm.small(rbox(0.04, 0.4, 0.5, 0.015), metalGun, T(0, bottomAt(FUSE, -2.5, 0) - 0.18, -2.5));
     asm.small(cyl(0.08, 0.1, 0.12, 12), { color: '#ff2a1a', rough: 0.2, panel: 0, glow: 1.5 }, T(0, bottomAt(FUSE, 0.5, 0) - 0.05, 0.5));
@@ -453,7 +489,7 @@ export function buildShip(asm: Asm, shell: PartBuilder, glass: PartBuilder, glow
     // Work lights over the opening (warm).
     for (const s of [-1, 1]) {
       kit.small.add(rbox(0.5, 0.08, 0.16, 0.02), { color: '#ffd9a8', rough: 0.3, panel: 0, glow: 4 }, W(T(s * 1.1, bottomAt(FUSE, 9.4, 1.1) + 0.12, 9.35)));
-      glows.add(new Vector3(s * 1.1, bottomAt(FUSE, 9.4, 1.1), 9.35).applyMatrix4(M), '#ffd9a8', 2.5, 0.5, GlowMode.Steady, 0, 1.5);
+      glows.add(new Vector3(s * 1.1, bottomAt(FUSE, 9.4, 1.1), 9.35).applyMatrix4(M), '#ffd9a8', 2.5, 0.5, GlowMode.Steady, 0, 1.5, new Vector3(0, -1, 0.3).transformDirection(M));
     }
   }
 
@@ -505,16 +541,15 @@ export function buildShip(asm: Asm, shell: PartBuilder, glass: PartBuilder, glow
 
   return {
     bayLight: new Vector3(0, 3.35, 6.6),
-    umbilical: new Vector3(-1.95, 1.95, -1.0),
   };
 }
 
 /** Decal that wraps the hull: a small grid sampled on the surface. */
-function hullDecal(b: PartBuilder, M: Matrix4, atlas: DecalAtlas, name: string, zc: number, a: number, width: number, side: number, color: string): void {
+function hullDecal(b: PartBuilder, M: Matrix4, atlas: DecalAtlas, name: string, zc: number, a: number, width: number, side: number, color: string, stations: Station[] = FUSE): void {
   const r = atlas.rect(name);
   const h = width / r.aspect;
   // Angular height: approximate local radius of curvature from the station.
-  const st = stationAt(FUSE, uAtZ(FUSE, zc), tmpSt);
+  const st = { ...stationAt(stations, uAtZ(stations, zc), tmpSt) };
   const rad = Math.max(st.ht, st.w / 2) * 0.95;
   const da = h / rad;
   const nu = 12;
@@ -524,7 +559,7 @@ function hullDecal(b: PartBuilder, M: Matrix4, atlas: DecalAtlas, name: string, 
       // Starboard reads nose-ward, port reads tail-ward.
       const z = zc + (u - 0.5) * width * (side > 0 ? -1 : 1);
       const ang = a + (v - 0.5) * da * (side > 0 ? 1 : -1);
-      hullAt(FUSE, z, ang, 0.012, out);
+      hullAt(stations, z, ang, 0.012, out);
     },
     nu,
     nv,
@@ -544,7 +579,7 @@ function hullDecal(b: PartBuilder, M: Matrix4, atlas: DecalAtlas, name: string, 
   for (let i = 0; i < nor.count; i++) {
     const out = new Vector3().fromBufferAttribute(pos, i);
     const n = new Vector3().fromBufferAttribute(nor, i);
-    const radial = new Vector3(out.x, out.y - st.y, 0);
+    const radial = new Vector3(out.x - (st.x ?? 0), out.y - st.y, 0);
     if (n.dot(radial) < 0) nor.setXYZ(i, -n.x, -n.y, -n.z);
   }
   // Winding: make front faces face outward.
@@ -562,4 +597,44 @@ function hullDecal(b: PartBuilder, M: Matrix4, atlas: DecalAtlas, name: string, 
     }
   }
   b.add(geo, { color, rough: 0.6, panel: 0 }, M);
+}
+
+/**
+ * Flat plate filling a loft's cross-section at z (inset from the skin), facing +Z, or -Z when
+ * `front`. Used as bulkheads that seal open loft ends.
+ */
+function stationDisc(stations: Station[], z: number, inset: number, front: boolean): BufferGeometry {
+  const u = uAtZ(stations, z);
+  const st = stationAt(stations, u, tmpSt);
+  const cx = st.x ?? 0;
+  const cy = st.y;
+  const p = new Vector3();
+  return paramSurface(
+    (s, v, out) => {
+      hullPoint(stations, u, v, p, inset);
+      out.set(cx + (p.x - cx) * s, cy + (p.y - cy) * s, p.z);
+    },
+    2,
+    40,
+    { flip: front },
+  );
+}
+
+/**
+ * Shallow dome closing a loft at its first (end 0) or last (end 1) station: from the skin
+ * (pushed out by `off`) to a tip `depth` metres beyond (negative = toward -Z).
+ */
+function endDome(stations: Station[], end: 0 | 1, depth: number, off: number): BufferGeometry {
+  const st = stationAt(stations, end, { z: 0, w: 0, ht: 0, hb: 0, y: 0, nt: 2, nb: 2 });
+  const rim = new Vector3();
+  return paramSurface(
+    (u, v, out) => {
+      hullAt(stations, st.z, v * Math.PI * 2, off, rim);
+      const k = Math.cos((u * Math.PI) / 2);
+      out.set((st.x ?? 0) + (rim.x - (st.x ?? 0)) * k, st.y + (rim.y - st.y) * k, st.z + depth * Math.sin((u * Math.PI) / 2));
+    },
+    5,
+    40,
+    { flip: end === 1 },
+  );
 }

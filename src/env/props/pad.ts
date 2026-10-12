@@ -5,7 +5,7 @@ import { Vector3 } from 'three';
 import { LANDING_PAD } from '../layout';
 import { Asm, PartBuilder, T, TY, type Kit } from './builder';
 import { GlowMode, type GlowSet } from './fx';
-import { PAD_BASE_RADIUS, PAD_TOP, PAD_TOP_RADIUS, SHIP, WREN, shipToWorld, RAMP_LIP_Z } from './layout';
+import { PAD_BASE_RADIUS, PAD_RAMP, PAD_STAIR, PAD_TOP, PAD_TOP_RADIUS, SHIP, WREN, shipToWorld, RAMP_LIP_Z } from './layout';
 import { fbm2, lathe, paramSurface, rbox, bcyl } from './shapes';
 import { DUST_COLOR } from '../layout';
 import type { HeightFn } from '../types';
@@ -64,7 +64,7 @@ export function buildPad(padB: PartBuilder, kit: Kit, glows: GlowSet, heightAt: 
     [rb + 0.15, gy - 0.06],
   ];
   // Lathe winds clockwise seen from above; reverse the profile so normals face up/out.
-  padB.add(lathe(prof.slice().reverse(), 160), { color: PAD_COLOR, rough: 0.82, metal: 0.05, panel: 0.75 }, T(cx, 0, cz));
+  padB.add(lathe(prof.slice().reverse(), 160), { color: PAD_COLOR, rough: 0.82, metal: 0.05, panel: 0.75, open: true }, T(cx, 0, cz));
 
   const asm = new Asm(kit);
 
@@ -83,21 +83,22 @@ export function buildPad(padB: PartBuilder, kit: Kit, glows: GlowSet, heightAt: 
     const white = i % 5 === 0;
     const col = white ? '#dfe8ff' : '#ffb347';
     asm.small(rbox(0.24, 0.05, 0.1, 0.015), { color: dead ? '#3a3632' : col, rough: 0.2, panel: 0, glow: dead ? 0 : 3.2 }, m.clone().multiply(T(0, 0.02, 0)));
-    if (!dead) glows.add(new Vector3(x, yy + 0.1, z), col, white ? 2.0 : 1.6, 0.22, i === 31 ? GlowMode.Flicker : GlowMode.Steady, i * 0.37, 1.0);
+    if (!dead) glows.add(new Vector3(x, yy + 0.1, z), col, white ? 2.0 : 1.6, 0.22, GlowMode.Steady, i * 0.37, 1.0);
   }
 
   // Vehicle access ramp on the north-west side (toward the lane north).
   {
-    const a = Math.atan2(-0.55, -0.83); // direction from centre (x, z)
+    // Flush with the deck at r0 and with the ground at r0 + run (walkable: see padSurfaceHeight).
+    const a = PAD_RAMP.angle; // direction from centre (x, z)
     const dx = Math.cos(a);
     const dz = Math.sin(a);
     const yaw = Math.atan2(dx, dz);
-    const run = 2.6;
+    const run = PAD_RAMP.run;
     const slope = Math.atan2(PAD_TOP, run);
-    const r0 = rt - 0.2;
+    const r0 = PAD_RAMP.r0;
     const mx = cx + dx * (r0 + run / 2);
     const mz = cz + dz * (r0 + run / 2);
-    const m = TY(mx, gy + PAD_TOP / 2 - 0.02, mz, yaw, slope);
+    const m = TY(mx, gy + PAD_TOP / 2 - 0.06, mz, yaw, slope);
     asm.hard(rbox(4.2, 0.12, run + 0.4, 0.03), { color: '#4a4a47', metal: 0.5, rough: 0.55 }, m);
     for (let k = 0; k < 9; k++) {
       asm.small(rbox(3.7, 0.03, 0.06, 0.012), { color: '#55544f', metal: 0.6, rough: 0.5 }, m.clone().multiply(T(0, 0.07, -run / 2 + 0.1 + (k * run) / 9)));
@@ -105,16 +106,14 @@ export function buildPad(padB: PartBuilder, kit: Kit, glows: GlowSet, heightAt: 
     for (const s of [-1, 1]) asm.small(rbox(0.12, 0.1, run + 0.4, 0.02), { color: '#d1a21f', rough: 0.5 }, m.clone().multiply(T(s * 2.06, 0.03, 0)));
   }
 
-  // Two-step stair toward the habs (west).
+  // Two-step stair toward the habs (west); walkable (see padSurfaceHeight).
   {
-    const a = Math.PI + 0.02;
+    const a = PAD_STAIR.angle;
     const dx = Math.cos(a);
     const dz = Math.sin(a);
     const yaw = Math.atan2(dx, dz);
-    for (let k = 0; k < 2; k++) {
-      const r = rb - 0.15 + k * 0.42;
-      const h = PAD_TOP * (1 - k * 0.5);
-      asm.hard(rbox(2.4, h, 0.5, 0.02), { color: '#3c3d3c', metal: 0.55, rough: 0.5 }, TY(cx + dx * r, gy + h / 2, cz + dz * r, yaw));
+    for (const { r, h } of PAD_STAIR.steps) {
+      asm.hard(rbox(PAD_STAIR.halfWidth * 2, h, PAD_STAIR.halfDepth * 2, 0.02), { color: '#3c3d3c', metal: 0.55, rough: 0.5 }, TY(cx + dx * r, gy + h / 2, cz + dz * r, yaw));
       asm.small(rbox(2.3, 0.02, 0.05, 0.008), { color: '#d1a21f', rough: 0.5 }, TY(cx + dx * (r + 0.23), gy + h + 0.002, cz + dz * (r + 0.23), yaw));
     }
   }
@@ -134,7 +133,7 @@ export function buildPad(padB: PartBuilder, kit: Kit, glows: GlowSet, heightAt: 
     220,
     6,
   );
-  kit.hard.add(drift, { color: DUST_COLOR, rough: 0.98, panel: 0 });
+  kit.hard.add(drift, { color: DUST_COLOR, rough: 0.98, panel: 0, open: true });
 
   // A few tufts of dust that have crept onto the pad top.
   for (let i = 0; i < 9; i++) {
@@ -152,7 +151,7 @@ export function buildPad(padB: PartBuilder, kit: Kit, glows: GlowSet, heightAt: 
       10,
       { flip: true },
     );
-    kit.small.add(g, { color: DUST_COLOR, rough: 0.98, panel: 0 });
+    kit.small.add(g, { color: DUST_COLOR, rough: 0.98, panel: 0, open: true });
   }
 
   // Tie-down rings and a couple of utility hatches on the deck.

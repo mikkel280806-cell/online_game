@@ -57,10 +57,50 @@ export function sphere(r: number, ws = 16, hs = 10): BufferGeometry {
   return new SphereGeometry(r, ws, hs);
 }
 
-/** Smooth tube through points (Catmull-Rom). */
+/**
+ * Smooth tube through points (Catmull-Rom). Open tubes get flat end caps, so the end of a pipe or
+ * cable never shows a hole you can see into.
+ */
 export function tube(points: Vector3[], r: number, segs = 32, radial = 6, closed = false): BufferGeometry {
   const curve = new CatmullRomCurve3(points, closed, 'centripetal');
-  return new TubeGeometry(curve, segs, r, radial, closed);
+  const g = new TubeGeometry(curve, segs, r, radial, closed);
+  return closed ? g : capTube(g, curve.getPoint(0), curve.getTangent(0), curve.getPoint(1), curve.getTangent(1), radial);
+}
+
+/** Adds flat caps over the first and last vertex rings of a TubeGeometry (drops its uv). */
+function capTube(g: BufferGeometry, p0: Vector3, t0: Vector3, p1: Vector3, t1: Vector3, radial: number): BufferGeometry {
+  const pos = g.attributes.position;
+  const nor = g.attributes.normal;
+  const ring = radial + 1;
+  const n = pos.count;
+  const P: number[] = Array.from(pos.array as Float32Array);
+  const N: number[] = Array.from(nor.array as Float32Array);
+  const I: number[] = Array.from(g.index!.array);
+  const cap = (first: number, centre: Vector3, normal: Vector3) => {
+    const base = P.length / 3;
+    P.push(centre.x, centre.y, centre.z);
+    N.push(normal.x, normal.y, normal.z);
+    for (let j = 0; j < ring; j++) {
+      P.push(pos.getX(first + j), pos.getY(first + j), pos.getZ(first + j));
+      N.push(normal.x, normal.y, normal.z);
+    }
+    // Wind so the face normal matches `normal`.
+    const a = new Vector3(P[(base + 1) * 3], P[(base + 1) * 3 + 1], P[(base + 1) * 3 + 2]).sub(centre);
+    const b = new Vector3(P[(base + 2) * 3], P[(base + 2) * 3 + 1], P[(base + 2) * 3 + 2]).sub(centre);
+    const flip = a.cross(b).dot(normal) < 0;
+    for (let j = 0; j < radial; j++) {
+      if (flip) I.push(base, base + 2 + j, base + 1 + j);
+      else I.push(base, base + 1 + j, base + 2 + j);
+    }
+  };
+  cap(0, p0, t0.clone().negate());
+  cap(n - ring, p1, t1.clone());
+  const out = new BufferGeometry();
+  out.setAttribute('position', new BufferAttribute(new Float32Array(P), 3));
+  out.setAttribute('normal', new BufferAttribute(new Float32Array(N), 3));
+  out.setIndex(I);
+  g.dispose();
+  return out;
 }
 
 /** Straight strut between two points (cylinder). */
@@ -243,11 +283,8 @@ export function extrude(outline: ReadonlyArray<readonly [number, number]>, depth
   return g;
 }
 
-/**
- * Corrugated sheet in the XY plane (facing +Z), width w along X, height h along Y.
- * Trapezoidal ribs of the given pitch and depth, like a cargo container wall.
- */
-export function corrugated(w: number, h: number, pitch: number, depth: number): BufferGeometry {
+/** Cross-section of a corrugated sheet (see corrugated()): (x, z) breakpoints from -w/2 to w/2. */
+export function corrugationProfile(w: number, pitch: number, depth: number): [number, number][] {
   const ribs = Math.max(1, Math.round(w / pitch));
   const p = w / ribs;
   const xs: [number, number][] = [];
@@ -256,6 +293,71 @@ export function corrugated(w: number, h: number, pitch: number, depth: number): 
     xs.push([x0, 0], [x0 + p * 0.18, depth], [x0 + p * 0.5, depth], [x0 + p * 0.68, 0]);
   }
   xs.push([w / 2, 0]);
+  return xs;
+}
+
+/**
+ * Decal quad (atlas rect) wrapped onto a corrugated sheet made with the same w/pitch/depth, in the
+ * sheet's frame: centred at (cx, cy), `lift` metres off the paint, facets lit like the sheet.
+ */
+export function corrugatedDecal(
+  w: number,
+  pitch: number,
+  depth: number,
+  cx: number,
+  cy: number,
+  width: number,
+  uv: { u0: number; v0: number; u1: number; v1: number; aspect: number },
+  lift = 0.004,
+): BufferGeometry {
+  const prof = corrugationProfile(w, pitch, depth);
+  const h = width / uv.aspect;
+  const x0 = cx - width / 2;
+  const x1 = cx + width / 2;
+  const zAt = (x: number) => {
+    for (let i = 0; i < prof.length - 1; i++) {
+      const [ax, az] = prof[i];
+      const [bx, bz] = prof[i + 1];
+      if (x >= ax && x <= bx) return az + ((x - ax) / Math.max(bx - ax, 1e-9)) * (bz - az);
+    }
+    return 0;
+  };
+  const cuts = [x0, ...prof.map(([x]) => x).filter((x) => x > x0 && x < x1), x1];
+  const pos: number[] = [];
+  const nor: number[] = [];
+  const uvs: number[] = [];
+  const idx: number[] = [];
+  for (let i = 0; i < cuts.length - 1; i++) {
+    const xa = cuts[i];
+    const xb = cuts[i + 1];
+    const za = zAt(xa);
+    const zb = zAt(xb);
+    const l = Math.hypot(xb - xa, zb - za) || 1;
+    const nx = -(zb - za) / l;
+    const nz = (xb - xa) / l;
+    const base = pos.length / 3;
+    const ua = uv.u0 + ((xa - x0) / width) * (uv.u1 - uv.u0);
+    const ub = uv.u0 + ((xb - x0) / width) * (uv.u1 - uv.u0);
+    pos.push(xa + nx * lift, cy - h / 2, za + nz * lift, xb + nx * lift, cy - h / 2, zb + nz * lift, xb + nx * lift, cy + h / 2, zb + nz * lift, xa + nx * lift, cy + h / 2, za + nz * lift);
+    for (let k = 0; k < 4; k++) nor.push(nx, 0, nz);
+    uvs.push(ua, uv.v0, ub, uv.v0, ub, uv.v1, ua, uv.v1);
+    idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('normal', new BufferAttribute(new Float32Array(nor), 3));
+  g.setAttribute('uv', new BufferAttribute(new Float32Array(uvs), 2));
+  g.setIndex(idx);
+  return g;
+}
+
+/**
+ * Corrugated sheet in the XY plane (facing +Z), width w along X, height h along Y.
+ * Trapezoidal ribs of the given pitch and depth, like a cargo container wall. Single-sided:
+ * put something solid behind it.
+ */
+export function corrugated(w: number, h: number, pitch: number, depth: number): BufferGeometry {
+  const xs = corrugationProfile(w, pitch, depth);
   // Build as a ribbon: vertices duplicated per segment for crisp facets.
   const pos: number[] = [];
   const nor: number[] = [];

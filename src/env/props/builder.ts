@@ -27,6 +27,12 @@ export interface Surf {
   glow?: number;
   /** Plating scale multiplier (bigger = larger panels). Default 1. */
   scale?: number;
+  /**
+   * The part is deliberately an open surface (a skin over another part, a single-sided sheet
+   * with a closed core behind it, or a mound/slab whose rim is buried in the ground). Every
+   * other part must be watertight: tests/unit/props-geometry.test.ts checks it.
+   */
+  open?: boolean;
 }
 
 const _c = new Color();
@@ -37,9 +43,34 @@ const DEBUG_CHECK = typeof location !== 'undefined' && location.search.includes(
 /** Optional per-vertex colour tweak (world position after transform, normal, colour to edit). */
 export type ColorFn = (p: Vector3, n: Vector3, out: Color) => void;
 
+/** One part as added to a builder (world-space geometry), recorded when `partAudit.enabled`. */
+export interface AuditedPart {
+  builder: string;
+  geo: BufferGeometry;
+  /** Declared open on purpose (Surf.open). */
+  open: boolean;
+  /** Call site that added the part (file:line), for reports. */
+  site: string;
+}
+
+/**
+ * Tests and tools: when enabled, every PartBuilder records its parts (position + index only)
+ * so geometry can be checked part by part (watertightness, footprints) without a GPU.
+ */
+export const partAudit: { enabled: boolean; parts: AuditedPart[] } = { enabled: false, parts: [] };
+
+function callSite(): string {
+  const lines = (new Error().stack ?? '').split('\n').slice(1);
+  const own = lines.find((l) => !/builder\.ts|fx\.ts/.test(l) && /props\//.test(l)) ?? lines[2] ?? '';
+  const m = own.match(/props\/([\w.]+):(\d+)/);
+  return m ? `${m[1]}:${m[2]}` : own.trim();
+}
+
 export class PartBuilder {
   private parts: BufferGeometry[] = [];
   triangles = 0;
+  /** Name used in audit reports. */
+  name = '';
 
   constructor(private readonly keepUv = false) {}
 
@@ -107,6 +138,12 @@ export class PartBuilder {
     geo.setAttribute('color', new BufferAttribute(col, 3));
     geo.setAttribute('aSurf', new BufferAttribute(s, 4));
     geo.setAttribute('aTile', new BufferAttribute(tile, 1));
+    if (partAudit.enabled) {
+      const g = new BufferGeometry();
+      g.setAttribute('position', geo.attributes.position.clone());
+      g.setIndex(geo.index!.clone());
+      partAudit.parts.push({ builder: this.name, geo: g, open: !!surf.open, site: callSite() });
+    }
     this.parts.push(geo);
     this.triangles += (geo.index ? geo.index.count : n) / 3;
     return geo;
@@ -207,5 +244,9 @@ export interface Kit {
 }
 
 export function newKit(): Kit {
-  return { hard: new PartBuilder(), small: new PartBuilder(), decal: new PartBuilder(true) };
+  const kit = { hard: new PartBuilder(), small: new PartBuilder(), decal: new PartBuilder(true) };
+  kit.hard.name = 'hard';
+  kit.small.name = 'small';
+  kit.decal.name = 'decal';
+  return kit;
 }
