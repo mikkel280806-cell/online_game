@@ -14,7 +14,6 @@ A two-player co-op space adventure that runs in the browser. See [PLAN.md](PLAN.
 | Shift | Sprint |
 | Drag, two-finger swipe, Q / E | Turn the camera |
 | Scroll / pinch | Zoom |
-| C | Free camera: fly with WASD, Space/Ctrl up/down, Shift fast; C again to return |
 | B | Solo: add or dismiss the bot partner |
 | H | Hide the HUD (for screenshots) |
 | F3 | Performance stats |

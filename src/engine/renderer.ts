@@ -21,6 +21,7 @@ import {
   KernelSize,
   NoiseEffect,
   RenderPass,
+  ShaderPass,
   SMAAEffect,
   SMAAPreset,
   ToneMappingEffect,
@@ -28,6 +29,27 @@ import {
   VignetteEffect,
 } from 'postprocessing';
 import { N8AOPostPass } from 'n8ao';
+import { ShaderMaterial } from 'three';
+import { SANITIZE_GLSL } from '../env/safety';
+
+/** Copies the frame, replacing NaN/Infinity with black (see env/safety.ts for why). */
+function sanitizePass(): ShaderPass {
+  const material = new ShaderMaterial({
+    uniforms: { inputBuffer: { value: null } },
+    vertexShader: `varying vec2 vUv; void main() { vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 1.0, 1.0); }`,
+    fragmentShader: `
+      uniform sampler2D inputBuffer;
+      varying vec2 vUv;
+      ${SANITIZE_GLSL}
+      void main() {
+        vec4 c = texture2D(inputBuffer, vUv);
+        gl_FragColor = vec4(hsSanitize(c.rgb), 1.0);
+      }`,
+    depthTest: false,
+    depthWrite: false,
+  });
+  return new ShaderPass(material, 'inputBuffer');
+}
 
 export type Quality = 'low' | 'medium' | 'high';
 
@@ -90,6 +112,10 @@ const TONE_MAPS: Record<ToneMap, ToneMappingMode> = {
 
 export interface PostOptions {
   quality: Quality;
+  /** Only tone mapping + anti-aliasing (for diagnosing rendering problems). */
+  minimal?: boolean;
+  ao?: boolean;
+  godRays?: boolean;
   toneMap?: ToneMap;
   /** Bright mesh at the sun's position; enables god rays on high quality. */
   sunMesh?: Mesh | null;
@@ -116,6 +142,11 @@ export class Renderer {
   private frameCount = 0;
   private headroomSeconds = 0;
   private cooldown = 0;
+  /** Average frame time when we last lowered the resolution (0 = not lowered). */
+  private droppedFromMs = 0;
+  /** Seconds during which we won't lower the resolution again. */
+  private holdOff = 0;
+  private failedDrops = 0;
   bloom: BloomEffect | null = null;
 
   constructor(
@@ -205,8 +236,10 @@ export class Renderer {
     const q = this.post.quality;
     const camera = this.camera;
     this.composer.addPass(new RenderPass(this.scene, camera));
+    this.composer.addPass(sanitizePass());
 
-    if (q !== 'low') {
+    const minimal = !!this.post.minimal;
+    if (q !== 'low' && !minimal && this.post.ao !== false) {
       const size = this.gl.getDrawingBufferSize(new Vector2());
       const ao = new N8AOPostPass(this.scene, camera, size.x || 512, size.y || 512);
       Object.assign(ao.configuration, {
@@ -222,7 +255,7 @@ export class Renderer {
     }
 
     const effects: Effect[] = [];
-    if (q === 'high' && this.post.sunMesh) {
+    if (q === 'high' && this.post.sunMesh && !minimal && this.post.godRays !== false) {
       effects.push(
         new GodRaysEffect(camera, this.post.sunMesh, {
           resolutionScale: 0.5,
@@ -236,24 +269,27 @@ export class Renderer {
         }),
       );
     }
-    this.bloom = new BloomEffect({
-      mipmapBlur: true,
-      luminanceThreshold: 0.9,
-      luminanceSmoothing: 0.3,
-      intensity: 0.85,
-      radius: 0.75,
-    });
+    this.bloom = minimal
+      ? null
+      : new BloomEffect({
+          mipmapBlur: true,
+          luminanceThreshold: 0.9,
+          luminanceSmoothing: 0.3,
+          intensity: 0.85,
+          radius: 0.75,
+        });
+    if (this.bloom) effects.push(this.bloom);
     effects.push(
-      this.bloom,
       new ExposureEffect(this.post.exposure ?? 1.0),
       new ToneMappingEffect({ mode: TONE_MAPS[this.post.toneMap ?? 'aces'] }),
-      new GradeEffect(),
-      new VignetteEffect({ offset: 0.28, darkness: 0.55 }),
     );
-    if (q !== 'low') {
-      const grain = new NoiseEffect({ blendFunction: BlendFunction.OVERLAY, premultiply: false });
-      grain.blendMode.opacity.value = 0.05;
-      effects.push(grain);
+    if (!minimal) {
+      effects.push(new GradeEffect(), new VignetteEffect({ offset: 0.28, darkness: 0.55 }));
+      if (q !== 'low') {
+        const grain = new NoiseEffect({ blendFunction: BlendFunction.OVERLAY, premultiply: false });
+        grain.blendMode.opacity.value = 0.05;
+        effects.push(grain);
+      }
     }
     effects.push(new SMAAEffect({ preset: q === 'high' ? SMAAPreset.HIGH : SMAAPreset.MEDIUM }));
     this.composer.addPass(new EffectPass(camera, ...effects));
@@ -264,7 +300,11 @@ export class Renderer {
     return Math.min(window.devicePixelRatio, QUALITY_MAX_PIXEL_RATIO[this.quality], this.scaleCap);
   }
 
-  /** Average frame time over ~0.5 s windows; step down fast, step up slowly, never thrash. */
+  /**
+   * Average frame time over ~0.5 s windows; step down fast, step up slowly, never thrash.
+   * If lowering the resolution didn't make frames faster, resolution wasn't the bottleneck
+   * (e.g. Safari capping the page at 30 fps, or the CPU): go back to full sharpness.
+   */
   private adaptResolution(frameMs: number): void {
     this.frameAccum += frameMs;
     this.frameCount++;
@@ -273,25 +313,38 @@ export class Renderer {
     const seconds = this.frameAccum / 1000;
     this.frameAccum = 0;
     this.frameCount = 0;
+    this.holdOff = Math.max(0, this.holdOff - seconds);
     if (this.cooldown > 0) {
       this.cooldown -= seconds;
       return;
     }
     const max = this.maxPixelRatio();
     const floor = Math.min(0.6, max);
-    if (avg > TARGET_FRAME_MS * 1.18 && this.pixelRatio > floor) {
+    const slow = avg > TARGET_FRAME_MS * 1.18;
+    if (slow && this.droppedFromMs > 0 && avg > this.droppedFromMs * 0.92) {
+      // The last step down bought nothing: restore full resolution and stop trying for a while.
+      this.failedDrops++;
+      this.droppedFromMs = 0;
+      this.holdOff = this.failedDrops >= 2 ? Infinity : 120;
+      this.setPixelRatio(max);
+      this.cooldown = 2;
+    } else if (slow && this.holdOff === 0 && this.pixelRatio > floor) {
+      this.droppedFromMs = avg;
       this.setPixelRatio(Math.max(floor, this.pixelRatio - 0.1));
       this.headroomSeconds = 0;
       this.cooldown = 2;
-    } else if (avg < TARGET_FRAME_MS * 0.78 && this.pixelRatio < max) {
-      this.headroomSeconds += seconds;
-      if (this.headroomSeconds > 5) {
-        this.setPixelRatio(Math.min(max, this.pixelRatio + 0.05));
+    } else if (!slow) {
+      this.droppedFromMs = 0;
+      if (avg < TARGET_FRAME_MS * 0.78 && this.pixelRatio < max) {
+        this.headroomSeconds += seconds;
+        if (this.headroomSeconds > 5) {
+          this.setPixelRatio(Math.min(max, this.pixelRatio + 0.05));
+          this.headroomSeconds = 0;
+          this.cooldown = 3;
+        }
+      } else {
         this.headroomSeconds = 0;
-        this.cooldown = 3;
       }
-    } else {
-      this.headroomSeconds = 0;
     }
   }
 

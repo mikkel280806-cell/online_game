@@ -22,6 +22,8 @@ import { PerfOverlay } from './ui/perf';
 import {
   deviceInfo,
   initTelemetry,
+  reportDiagnostics,
+  reportError,
   reportPerf,
   reportSession,
   sendFeedback,
@@ -34,6 +36,8 @@ declare global {
     __hs?: GameDebugState;
     /** Set when a ?shot= render is complete. */
     __shotReady?: boolean;
+    /** Rendering health report (used by the smoke test and sent to telemetry). */
+    __diag?: () => Promise<Record<string, unknown>>;
   }
 }
 
@@ -44,6 +48,8 @@ const netOptions: NetOptions = {
   signaling: params.get('net') === 'local' ? 'broadcast' : 'supabase',
   forceRelay: params.get('relay') === '1',
   ...(params.get('ice') === 'none' ? { iceServers: [] } : {}),
+  // Tests on slow software-rendered machines give WebRTC longer before falling back to relay.
+  ...(Number(params.get('p2ptimeout')) > 0 ? { p2pTimeoutMs: Number(params.get('p2ptimeout')) } : {}),
 };
 const telemetryParam = params.get('telemetry');
 initTelemetry(!shot && (telemetryParam ? telemetryParam === '1' : !isLocalHost));
@@ -59,6 +65,7 @@ const rig = new CameraRig(innerWidth / innerHeight);
 const camera = rig.camera;
 const renderer = new Renderer(canvas, camera);
 renderer.setQuality(quality);
+if (params.get('drs') === '0') renderer.setDynamicResolution(false);
 const scale = Number(params.get('scale'));
 if (scale > 0) renderer.setScaleCap(Math.max(0.25, Math.min(2, scale)));
 
@@ -71,6 +78,9 @@ renderer.setScene(world.scene);
 const toneMap = params.get('tm');
 renderer.configurePost({
   quality,
+  minimal: params.get('post') === 'min',
+  ao: params.get('ao') !== '0',
+  godRays: params.get('rays') !== '0',
   sunMesh: world.sky.sunMesh,
   exposure: Number(params.get('exposure')) || 1.25,
   ...(toneMap === 'agx' || toneMap === 'aces' || toneMap === 'neutral' ? { toneMap } : {}),
@@ -134,9 +144,6 @@ window.addEventListener('keydown', (e) => {
   } else if (e.code === 'F8') {
     e.preventDefault();
     void feedback.open();
-  } else if (mode === 'play' && e.code === 'KeyC') {
-    const free = rig.toggleFree() === 'free';
-    hud.toast(free ? 'Free camera: WASD fly · drag to look · Space/Ctrl up/down · Shift fast · C to return' : 'Camera follows you again', 3500);
   } else if (mode === 'play' && e.code === 'KeyH') {
     uiRoot.classList.toggle('hide-hud');
   } else if (mode === 'play' && solo && e.code === 'KeyB') {
@@ -196,7 +203,7 @@ const ease = (t: number) => t * t * (3 - 2 * t);
 
 /** Turn keys into a world-space move direction relative to where the camera looks. */
 function playerControl(): PlayerControl {
-  if (mode !== 'play' || rig.mode === 'free' || feedback.isOpen) return NO_CONTROL;
+  if (mode !== 'play' || feedback.isOpen) return NO_CONTROL;
   const a = input.moveAxis();
   const yaw = rig.viewYaw;
   const fx = -Math.sin(yaw);
@@ -345,12 +352,64 @@ async function runShot(name: string): Promise<void> {
   window.__shotReady = true;
 }
 
+// ---------- Diagnostics ----------
+
+/** Mean brightness (0-255) of the current frame: ~0 means the screen is black. */
+async function measureFrame(): Promise<number | null> {
+  const url = await captureScreenshot();
+  if (!url) return null;
+  const img = new Image();
+  img.src = url;
+  await img.decode();
+  const c = document.createElement('canvas');
+  c.width = 48;
+  c.height = 27;
+  const g = c.getContext('2d')!;
+  g.drawImage(img, 0, 0, c.width, c.height);
+  const px = g.getImageData(0, 0, c.width, c.height).data;
+  let sum = 0;
+  for (let i = 0; i < px.length; i += 4) sum += 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
+  return Math.round((sum / (px.length / 4)) * 10) / 10;
+}
+
+async function diagnostics(): Promise<Record<string, unknown>> {
+  const ctx = renderer.gl.getContext() as WebGL2RenderingContext;
+  // three's internal program objects carry compile diagnostics when a shader fails.
+  type Program = { name: string; diagnostics?: { runnable: boolean; programLog: string; vertexShader: { log: string }; fragmentShader: { log: string } } };
+  const programs = (renderer.gl.info.programs ?? []) as unknown as Program[];
+  const failing = programs
+    .filter((p) => p.diagnostics && p.diagnostics.runnable === false)
+    .map((p) => ({
+      name: p.name,
+      log: `${p.diagnostics!.programLog}\n${p.diagnostics!.vertexShader.log}\n${p.diagnostics!.fragmentShader.log}`.slice(0, 1500),
+    }));
+  return {
+    brightness: await measureFrame(),
+    contextLost: ctx.isContextLost(),
+    programs: programs.length,
+    failing,
+    maxTextureUnits: ctx.getParameter(ctx.MAX_TEXTURE_IMAGE_UNITS),
+    maxVaryings: ctx.getParameter(ctx.MAX_VARYING_VECTORS),
+    maxFragmentUniforms: ctx.getParameter(ctx.MAX_FRAGMENT_UNIFORM_VECTORS),
+    floatBuffers: !!ctx.getExtension('EXT_color_buffer_float'),
+    pixelRatio: renderer.getPixelRatio(),
+    draws: renderer.gl.info.render.calls,
+    triangles: renderer.gl.info.render.triangles,
+    post: params.get('post') ?? 'full',
+  };
+}
+window.__diag = diagnostics;
+(window as unknown as { __setScale: (s: number) => void }).__setScale = (s: number) => renderer.setScaleCap(s);
+canvas.addEventListener('webglcontextlost', () => reportError('WebGL context lost'));
+
 const loading = document.getElementById('loading');
 if (shot) {
   loading?.remove();
   void runShot(shot);
 } else {
   loop.run();
+  // One health report per visit, once shaders have compiled and a few frames have run.
+  setTimeout(() => void diagnostics().then(reportDiagnostics).catch(() => {}), 6000);
   // Fade out once the first frames (and their shader compiles) are done.
   requestAnimationFrame(() => requestAnimationFrame(() => {
     loading?.classList.add('done');

@@ -1,5 +1,6 @@
 import { Scene, Vector3, type Object3D, type PerspectiveCamera, type WebGLRenderer } from 'three';
 import { installAtmosphere } from '../env/atmosphere';
+import { installRadianceClamp } from '../env/safety';
 import { PLAY_RADIUS, SPAWN_POINTS } from '../env/layout';
 import { createLighting, type Lighting } from '../env/lighting';
 import { createProps, padSurfaceHeight } from '../env/props';
@@ -26,6 +27,7 @@ export interface World {
 /** Chapter 1: the moon Vigil, Survey Outpost Kestrel-7, and the Meridian on the horizon. */
 export function createWorld(gl: WebGLRenderer, camera: PerspectiveCamera, quality: Quality): World {
   const t0 = performance.now();
+  installRadianceClamp();
   const scene = new Scene();
   scene.fog = installAtmosphere();
 

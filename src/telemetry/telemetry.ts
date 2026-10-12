@@ -22,6 +22,23 @@ export function initTelemetry(on: boolean): void {
   if (!on) return;
   window.addEventListener('error', (e) => reportError(e.message, e.error?.stack));
   window.addEventListener('unhandledrejection', (e) => reportError(String(e.reason?.message ?? e.reason), e.reason?.stack));
+  // Rendering problems (e.g. a shader a browser rejects) are logged, not thrown: forward them too.
+  const original = console.error.bind(console);
+  console.error = (...args: unknown[]) => {
+    original(...args);
+    try {
+      const text = args.map((a) => (a instanceof Error ? a.message : typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
+      const errorLines = text.split('\n').filter((l) => /error/i.test(l)).slice(0, 25).join('\n');
+      reportError(`console: ${text.slice(0, 400)}\n${errorLines}`.slice(0, 4000));
+    } catch {
+      /* never let telemetry break the game */
+    }
+  };
+}
+
+/** One-off health report a few seconds after start: WebGL limits, failed shaders, context state. */
+export function reportDiagnostics(data: Record<string, unknown>): void {
+  void insert('telemetry', { kind: 'session', data: { type: 'diag', ...data } });
 }
 
 export function setTelemetryContext(ctx: Partial<TelemetryContext>): void {
@@ -47,8 +64,8 @@ export function reportPerf(sample: Record<string, unknown>): void {
   void insert('telemetry', { kind: 'perf', data: sample });
 }
 
-function reportError(message: string, stack?: string): void {
-  if (errorsSent >= 10) return;
+export function reportError(message: string, stack?: string): void {
+  if (errorsSent >= 12) return;
   errorsSent++;
   void insert('telemetry', { kind: 'error', data: { message: message.slice(0, 500), stack: stack?.slice(0, 4000) } });
 }

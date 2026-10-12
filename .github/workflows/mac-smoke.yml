@@ -1,0 +1,31 @@
+name: Mac smoke test
+
+# Runs the game on a real Mac (Apple GPU through Metal), in Safari's engine and in Chrome,
+# and reports whether frames actually render. Run it by hand from the Actions tab.
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: macos-14
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install webkit chromium
+      - run: npm run build
+      - name: WebKit (Safari's engine)
+        run: node scripts/smoke.mjs webkit
+        continue-on-error: true
+      - name: Chrome, headed (real GPU)
+        run: HEADED=1 node scripts/smoke.mjs chromium
+        continue-on-error: true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-screenshots
+          path: smoke-*.png

@@ -2,7 +2,7 @@ import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 
 // Same-browser multiplayer: BroadcastChannel signaling, real WebRTC over host candidates.
 // The cloud renders in software at a few fps, so keep rendering cheap and never assume timing.
-const URL = '/?net=local&ice=none&telemetry=0&quality=low&scale=0.4';
+const URL = '/?net=local&ice=none&telemetry=0&quality=low&scale=0.4&p2ptimeout=30000';
 
 type HS = NonNullable<Window['__hs']>;
 const state = (page: Page) => page.evaluate(() => window.__hs as HS);
@@ -105,7 +105,7 @@ for (const relay of [false, true]) {
 // Needs network access to Supabase, which CI has and the dev container may not.
 test.describe('over Supabase Realtime', () => {
   test.skip(!process.env.E2E_SUPABASE, 'set E2E_SUPABASE=1 to run (needs internet)');
-  const NET_URL = '/?telemetry=0&quality=low&scale=0.4';
+  const NET_URL = '/?telemetry=0&quality=low&scale=0.4&p2ptimeout=30000';
 
   for (const relay of [false, true]) {
     test(`two players connect over the internet (${relay ? 'relay' : 'p2p'})`, async ({ context }) => {

@@ -35,7 +35,7 @@ vec3 atmHorizon(vec3 dir) {
   float len = length(flat_);
   vec2 sunFlat = normalize(ATM_SUN_DIR.xz);
   float facing = len > 1e-4 ? dot(flat_ / len, sunFlat) : 0.0;
-  float w = pow(facing * 0.5 + 0.5, 2.6);
+  float w = pow(clamp(facing * 0.5 + 0.5, 0.0, 1.0), 2.6);
   return mix(ATM_HORIZON_AWAY, ATM_HORIZON_SUN, w);
 }
 

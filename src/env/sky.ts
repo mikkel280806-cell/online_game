@@ -10,6 +10,7 @@ import {
 } from 'three';
 import { ATMOSPHERE_GLSL } from './atmosphere';
 import { PLANET_DIR, SUN_DIR } from './layout';
+import { SANITIZE_GLSL } from './safety';
 import { NOISE_GLSL } from './shaders/noise';
 
 /** Angular radius of the red giant (radians): huge and close. */
@@ -52,6 +53,7 @@ function skyMaterial(): ShaderMaterial {
       varying vec3 vDir;
       ${NOISE_GLSL}
       ${ATMOSPHERE_GLSL}
+      ${SANITIZE_GLSL}
 
       // ---- Orrin, the gas giant (unit-distance model: centre at uPlanetDir, radius R) ----
       float planetR() { return sin(uPlanetRadius); }
@@ -206,7 +208,7 @@ function skyMaterial(): ShaderMaterial {
         vec3 sun = shadeSun(d, sunCover);
         col = mix(col, sun * mix(1.0, 0.6, haze), sunCover * (1.0 - planet.a));
 
-        gl_FragColor = vec4(col, 1.0);
+        gl_FragColor = vec4(hsSanitize(col), 1.0);
       }
     `,
   });

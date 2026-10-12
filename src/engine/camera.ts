@@ -12,24 +12,19 @@ const dampAngle = (current: number, target: number, lambda: number, dt: number) 
   return current + d * (1 - Math.exp(-lambda * dt));
 };
 
-export type CameraMode = 'follow' | 'free';
-
 const MIN_PITCH = 0.05;
 const MAX_PITCH = 1.35;
 const MIN_DIST = 4;
 const MAX_DIST = 45;
 
-const tmp = new Vector3();
 const look = new Vector3();
 
 /**
- * Third-person camera that orbits the player (drag / two-finger swipe / Q-E to turn,
- * scroll or pinch to zoom) plus a free-flying camera (C to toggle) for looking around.
- * Keeps itself above the ground.
+ * Third-person camera that orbits the player: drag / two-finger swipe / Q-E to turn,
+ * scroll or pinch to zoom. Keeps itself above the ground.
  */
 export class CameraRig {
   readonly camera: PerspectiveCamera;
-  mode: CameraMode = 'follow';
   /** Ground height lookup so the camera never dips under the terrain. */
   groundAt: (x: number, z: number) => number = () => 0;
 
@@ -42,11 +37,6 @@ export class CameraRig {
   private goalDistance = 13;
   private focus = new Vector3();
   private hasFocus = false;
-
-  // Free camera.
-  private freeYaw = 0;
-  private freePitch = 0;
-  private freeVel = new Vector3();
 
   private dragging = false;
   private lastX = 0;
@@ -101,20 +91,7 @@ export class CameraRig {
 
   /** Camera heading, for camera-relative movement. 0 = looking north (-Z). */
   get viewYaw(): number {
-    return this.mode === 'free' ? this.freeYaw : this.yaw;
-  }
-
-  toggleFree(): CameraMode {
-    if (this.mode === 'follow') {
-      this.camera.getWorldDirection(tmp);
-      this.freeYaw = Math.atan2(-tmp.x, -tmp.z);
-      this.freePitch = Math.asin(MathUtils.clamp(tmp.y, -1, 1));
-      this.freeVel.set(0, 0, 0);
-      this.mode = 'free';
-    } else {
-      this.mode = 'follow';
-    }
-    return this.mode;
+    return this.yaw;
   }
 
   /** Jump straight to following `target` without smoothing. */
@@ -135,10 +112,6 @@ export class CameraRig {
   }
 
   update(dt: number, target: Vector3 | null, input: Input): void {
-    if (this.mode === 'free') {
-      this.updateFree(dt, input);
-      return;
-    }
     if (input.isDown('KeyQ')) this.goalYaw += 1.8 * dt;
     if (input.isDown('KeyE')) this.goalYaw -= 1.8 * dt;
     this.yaw = dampAngle(this.yaw, this.goalYaw, 12, dt);
@@ -162,17 +135,12 @@ export class CameraRig {
   }
 
   private rotate(dYaw: number, dPitch: number): void {
-    if (this.mode === 'free') {
-      this.freeYaw += dYaw;
-      this.freePitch = MathUtils.clamp(this.freePitch - dPitch, -1.45, 1.45);
-    } else {
-      this.goalYaw += dYaw;
-      this.goalPitch = MathUtils.clamp(this.goalPitch + dPitch, MIN_PITCH, MAX_PITCH);
-    }
+    this.goalYaw += dYaw;
+    this.goalPitch = MathUtils.clamp(this.goalPitch + dPitch, MIN_PITCH, MAX_PITCH);
   }
 
   private zoom(factor: number): void {
-    if (this.mode === 'follow') this.goalDistance = MathUtils.clamp(this.goalDistance * factor, MIN_DIST, MAX_DIST);
+    this.goalDistance = MathUtils.clamp(this.goalDistance * factor, MIN_DIST, MAX_DIST);
   }
 
   private applyFollow(): void {
@@ -185,26 +153,5 @@ export class CameraRig {
     );
     c.y = Math.max(c.y, this.groundAt(c.x, c.z) + 1.2);
     this.camera.lookAt(look.set(this.focus.x, this.focus.y + 1.3, this.focus.z));
-  }
-
-  private updateFree(dt: number, input: Input): void {
-    const fast = input.isDown('ShiftLeft') || input.isDown('ShiftRight');
-    const speed = fast ? 70 : 14;
-    const axis = input.moveAxis();
-    const up = (input.isDown('Space') ? 1 : 0) - (input.isDown('ControlLeft') || input.isDown('KeyZ') ? 1 : 0);
-    const cy = Math.cos(this.freeYaw);
-    const sy = Math.sin(this.freeYaw);
-    const cp = Math.cos(this.freePitch);
-    const sp = Math.sin(this.freePitch);
-    // Forward follows the view (including pitch); strafing stays level.
-    tmp.set(-sy * cp * axis.y + cy * axis.x, sp * axis.y + up, -cy * cp * axis.y - sy * axis.x);
-    if (tmp.lengthSq() > 1) tmp.normalize();
-    tmp.multiplyScalar(speed);
-    this.freeVel.lerp(tmp, 1 - Math.exp(-6 * dt));
-    const c = this.camera.position;
-    c.addScaledVector(this.freeVel, dt);
-    c.y = Math.max(c.y, this.groundAt(c.x, c.z) + 0.6);
-    look.set(c.x - sy * cp, c.y + sp, c.z - cy * cp);
-    this.camera.lookAt(look);
   }
 }
