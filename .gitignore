@@ -1,0 +1,9 @@
+node_modules/
+dist/
+test-results/
+playwright-report/
+shots/out/
+.vite/
+*.log
+.DS_Store
+.vercel
