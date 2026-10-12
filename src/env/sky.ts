@@ -18,8 +18,19 @@ import { NOISE_GLSL } from './shaders/noise';
 export const SUN_ANGULAR_RADIUS = 0.068;
 /** Angular radius of the gas giant Orrin (radians). */
 export const PLANET_ANGULAR_RADIUS = 0.2;
-/** Orrin's spin axis, tilted so its bands and rings sit at an angle. */
-const PLANET_AXIS = new Vector3(0.28, 0.93, 0.24).normalize();
+/**
+ * Orrin's spin axis, set relative to where we see it from: the rings read as a classic open
+ * ellipse (tipped ~22 degrees toward us) with its long axis near horizontal, slightly rolled.
+ */
+const PLANET_AXIS = (() => {
+  const d = PLANET_DIR.clone().normalize();
+  const up = new Vector3(0, 1, 0).addScaledVector(d, -d.y).normalize(); // "up" on the screen
+  const right = new Vector3().crossVectors(d, up).normalize();
+  const roll = 0.18;
+  const open = 0.38;
+  const screenUp = up.multiplyScalar(Math.cos(roll)).addScaledVector(right, Math.sin(roll));
+  return screenUp.multiplyScalar(Math.cos(open)).addScaledVector(d, -Math.sin(open)).normalize();
+})();
 
 const SKY_RADIUS = 9000;
 
@@ -126,7 +137,9 @@ function skyMaterial(): ShaderMaterial {
             // Planet shadow on the rings.
             vec3 v = C - p;
             float proj = dot(v, uSunDir);
-            float shadow = (proj > 0.0 && length(v - uSunDir * proj) < R) ? 0.12 : 1.0;
+            // Kept soft: a hard black band reads as the rings being cut off.
+            float shadow = (proj > 0.0 && length(v - uSunDir * proj) < R) ? 0.4 : 1.0;
+            ringA *= mix(0.65, 1.0, shadow);
             // Rings are lit from the side; forward scattering brightens them toward the sun.
             float lit = 0.35 + 0.65 * abs(dot(A, uSunDir));
             ringCol = vec3(0.62, 0.52, 0.42) * lit * shadow * 0.9;

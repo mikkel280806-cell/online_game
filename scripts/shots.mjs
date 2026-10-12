@@ -2,7 +2,7 @@
 // Usage: npm run shots [-- name1 name2 ...]   (expects `npm run preview` on :4173, or starts it)
 // Env: SHOTS_URL (another server, e.g. a second build), SHOTS_OUT (output folder, default shots/out).
 import { chromium } from '@playwright/test';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 
 const ALL = ['title', 'play', 'vista', 'sun', 'planet', 'ship'];
@@ -21,6 +21,8 @@ async function up(url) {
 
 let server;
 if (!(await up(base))) {
+  // Build first: previewing an old dist/ silently renders yesterday's game.
+  if (!process.env.SHOTS_NOBUILD) spawnSync('npm', ['run', 'build'], { stdio: 'ignore' });
   server = spawn('npx', ['vite', 'preview', '--port', '4173', '--strictPort'], { stdio: 'ignore' });
   for (let i = 0; i < 60 && !(await up(base)); i++) await new Promise((r) => setTimeout(r, 250));
 }
