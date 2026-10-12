@@ -510,7 +510,13 @@ async function prewarmShaders(): Promise<void> {
     prewarmed = new Avatar('vanguard');
     prewarmed.root.position.copy(world.spawnPoints[0]);
     world.add(prewarmed.root);
-    await renderer.gl.compileAsync(world.scene, camera);
+    // compileAsync can wait forever on some browsers (it never resolved in WebKit): never let the
+    // prewarm hold the game on the loading screen. Shaders it didn't finish compile on first use.
+    const timedOut = await Promise.race([
+      renderer.gl.compileAsync(world.scene, camera).then(() => false),
+      new Promise<boolean>((r) => setTimeout(() => r(true), 5000)),
+    ]);
+    if (timedOut) console.info('[prewarm] gave up waiting for shader compiles');
   } catch (e) {
     console.warn('[prewarm]', e);
   } finally {
