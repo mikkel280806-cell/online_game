@@ -62,6 +62,8 @@ renderer.setQuality(quality);
 const scale = Number(params.get('scale'));
 if (scale > 0) renderer.setScaleCap(Math.max(0.25, Math.min(2, scale)));
 
+// Let the loading screen paint before the (synchronous) world build.
+await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 const world = createWorld(renderer.gl, camera, quality);
 rig.groundAt = world.heightAt;
 rig.attach(canvas);
@@ -311,7 +313,7 @@ async function runShot(name: string): Promise<void> {
       break;
     }
     case 'sun': {
-      const from = new Vector3(20, world.heightAt(20, 10) + 2.2, 10);
+      const from = new Vector3(-48, world.heightAt(-48, 14) + 2.2, 14);
       look(from, from.clone().addScaledVector(SUN_DIR, 100).setY(from.y + 8), 50);
       break;
     }
@@ -343,5 +345,15 @@ async function runShot(name: string): Promise<void> {
   window.__shotReady = true;
 }
 
-if (shot) void runShot(shot);
-else loop.run();
+const loading = document.getElementById('loading');
+if (shot) {
+  loading?.remove();
+  void runShot(shot);
+} else {
+  loop.run();
+  // Fade out once the first frames (and their shader compiles) are done.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    loading?.classList.add('done');
+    setTimeout(() => loading?.remove(), 900);
+  }));
+}

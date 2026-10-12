@@ -66,8 +66,9 @@ export function createProps(ctx: EnvContext, heightAt: HeightFn): Props {
   stage('wreck');
 
   // ---- materials ------------------------------------------------------------------------------
-  const hardMat = createHardSurfaceMaterial(tex, { tile: 3.2, dust: 0.75 });
-  const shellMat = createHardSurfaceMaterial(tex, { tile: 3.2, dust: 0.6, side: DoubleSide, darkBackFaces: true });
+  const hardMat = createHardSurfaceMaterial(tex, { tile: 3.2, dust: 0.75, wear: 0.55 });
+  // The ship is maintained: lighter wear than the abandoned outpost.
+  const shellMat = createHardSurfaceMaterial(tex, { tile: 3.2, dust: 0.6, wear: 0.3, side: DoubleSide, darkBackFaces: true });
   const padMat = createHardSurfaceMaterial(tex, {
     tile: 6.4,
     dust: 0.45,
@@ -106,11 +107,11 @@ export function createProps(ctx: EnvContext, heightAt: HeightFn): Props {
   add(kit.hard.build(), hardMat, true, 'props-hard');
   add(kit.small.build(), hardMat, false, 'props-small');
   add(shellB.build(), shellMat, true, 'props-ship-hull');
-  add(padB.build(), padMat, true, 'props-pad');
+  add(padB.build(), padMat, false, 'props-pad'); // flat: its shadow is invisible
   add(kit.decal.build(), decalMat, false, 'props-decals');
   add(solarB.build(), solarMat, true, 'props-solar');
   add(glassB.build(), glassMat, true, 'props-canopy');
-  add(wreck.builder.build(), wreckMat, true, 'props-wreck');
+  add(wreck.builder.build(), wreckMat, false, 'props-wreck'); // beyond the shadow distance
 
   // Comms dish: its own mesh so it can turn.
   const dish = add(dishB.build(), hardMat, true, 'props-dish');

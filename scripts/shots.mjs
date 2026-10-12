@@ -38,7 +38,8 @@ page.on('console', (m) => {
 for (const name of names) {
   const t0 = Date.now();
   const [shotName, extra] = name.split('&', 2);
-  await page.goto(`${base}/?shot=${shotName}${extra ? '&' + name.slice(shotName.length + 1) : ''}`);
+  // Don't wait for "load": the first heavy frame renders before it fires. __shotReady is what counts.
+  await page.goto(`${base}/?shot=${shotName}${extra ? '&' + name.slice(shotName.length + 1) : ''}`, { waitUntil: 'commit' });
   await page.waitForFunction(() => window.__shotReady === true, null, { timeout: 300_000 });
   await page.screenshot({ path: `${outDir}/${name.replace(/[&=]/g, '_')}.png`, timeout: 180_000 });
   console.log(`${name}: ${Date.now() - t0} ms`);

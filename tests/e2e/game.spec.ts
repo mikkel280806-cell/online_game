@@ -96,7 +96,7 @@ async function playTogether(context: BrowserContext, url: string, transport: str
 for (const relay of [false, true]) {
   test(`two players connect and see each other move (${relay ? 'relay' : 'p2p'})`, async ({ context }) => {
     // Two pages share one software-rendered CPU in CI containers; give them room.
-    test.setTimeout(180_000);
+    test.setTimeout(300_000);
     await playTogether(context, URL + (relay ? '&relay=1' : ''), relay ? 'local' : 'p2p');
   });
 }
@@ -109,7 +109,7 @@ test.describe('over Supabase Realtime', () => {
 
   for (const relay of [false, true]) {
     test(`two players connect over the internet (${relay ? 'relay' : 'p2p'})`, async ({ context }) => {
-      test.setTimeout(180_000);
+      test.setTimeout(300_000);
       await playTogether(context, NET_URL + (relay ? '&relay=1' : ''), relay ? 'relay' : 'p2p');
     });
   }

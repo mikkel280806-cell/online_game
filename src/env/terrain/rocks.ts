@@ -389,7 +389,8 @@ export function createRocks(
       const t = 0.82 + p.tint * 0.3;
       mesh.setColorAt(i, _c.setRGB(t, t * (0.97 + p.tint * 0.03), t * (0.94 + p.tint * 0.05)));
     });
-    mesh.castShadow = true;
+    // Distant rocks are beyond the shadow-map range; the precomputed sun shadow covers them.
+    mesh.castShadow = !b.far;
     mesh.receiveShadow = true;
     mesh.computeBoundingSphere();
     mesh.computeBoundingBox();

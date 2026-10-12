@@ -5,8 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Hollow Star</title>
     <link rel="stylesheet" href="/src/ui/style.css" />
+    <style>
+      /* Inline so it shows before the game's code has even downloaded. */
+      #loading { position: fixed; inset: 0; z-index: 10; display: grid; place-content: center; text-align: center;
+        background: radial-gradient(ellipse at 50% 60%, #2a1408 0%, #07060a 70%); color: #e8eef6;
+        font-family: system-ui, sans-serif; transition: opacity 0.8s ease; }
+      #loading.done { opacity: 0; pointer-events: none; }
+      .loading-title { font-weight: 700; font-size: clamp(28px, 5vw, 56px); letter-spacing: 0.3em; padding-left: 0.3em; }
+      .loading-sub { margin-top: 14px; color: #9aa8bb; letter-spacing: 0.25em; text-transform: uppercase; font-size: 14px;
+        animation: pulse 1.6s ease-in-out infinite; }
+      @keyframes pulse { 50% { opacity: 0.35; } }
+    </style>
   </head>
   <body>
+    <div id="loading">
+      <div class="loading-title">HOLLOW STAR</div>
+      <div class="loading-sub">Descending to Vigil…</div>
+    </div>
     <canvas id="game"></canvas>
     <div id="ui"></div>
     <script type="module" src="/src/main.ts"></script>

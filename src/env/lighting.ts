@@ -19,7 +19,7 @@ import type { Quality } from './types';
 const CSM_SETTINGS: Record<Quality, { cascades: number; size: number; maxFar: number }> = {
   low: { cascades: 2, size: 1024, maxFar: 160 },
   medium: { cascades: 3, size: 2048, maxFar: 260 },
-  high: { cascades: 4, size: 2048, maxFar: 360 },
+  high: { cascades: 3, size: 2048, maxFar: 300 },
 };
 
 export interface Lighting {
