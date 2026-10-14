@@ -1,6 +1,16 @@
 # Hollow Star
 
-A two-player co-op space adventure that runs in the browser. See [PLAN.md](PLAN.md) for the vision and roadmap, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the code fits together.
+A two-player co-op space adventure. See [PLAN.md](PLAN.md) for the vision and roadmap, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the code fits together.
+
+**The game is moving to Unity** (a native macOS app, URP, with models made in Blender). See [UNITY_PLAN.md](UNITY_PLAN.md). The browser version below is frozen as the reference for rules, layout and tuning.
+
+## Unity version
+
+- Project: `HollowStarUnity/` (Unity 6000.6.5f1). Blender build scripts: `art/blender/scripts/`.
+- After cloning, open the project and run **Hollow Star > Build Vigil Scene**. It bakes the terrain, which is not stored in git, and rebuilds `Assets/_Project/Scenes/Vigil.unity`.
+- Tests: Unity Test Runner, EditMode.
+
+## Browser version (frozen)
 
 ## Play
 

@@ -8,3 +8,9 @@ shots/out/
 .DS_Store
 .vercel
 .claude/worktrees/
+
+# Unity port: terrain data is baked by Hollow Star > Build Vigil Scene (run it after cloning)
+HollowStarUnity/Assets/_Project/Art/Terrain/*.asset
+HollowStarUnity/Assets/_Project/Art/Terrain/*.asset.meta
+# Blender backups
+*.blend1
