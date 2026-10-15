@@ -6,40 +6,29 @@ using UnityEngine.UIElements;
 namespace HollowStar.Game.UI
 {
     /// <summary>
-    /// The lobby menu and the in-game HUD, built in code on a UIDocument so there is no UXML or USS
-    /// to keep in sync. It only reads <see cref="SessionFlow"/> state and calls its actions.
+    /// The lobby menu and the in-game session card, built in code on a UIDocument and styled by Theme.uss and
+    /// Lobby.uss (the same tinted-glass look as the HUD and PDA). It only reads <see cref="SessionFlow"/> state
+    /// and calls its actions.
     /// </summary>
     [RequireComponent(typeof(UIDocument))]
     public sealed class LobbyUI : MonoBehaviour
     {
         public SessionFlow Flow;
+        public StyleSheet Theme;
+        public StyleSheet Style;
 
         private const float NoticeSeconds = 4f;
 
-        // Suit accents (host orange, guest teal) and the dark translucent panel look.
-        private static readonly Color HostColor = Hex("#ff7a1a");
-        private static readonly Color GuestColor = Hex("#29d3ff");
-        private static readonly Color NeutralColor = Hex("#c9c4b8");
-        private static readonly Color PanelColor = new Color(0.035f, 0.045f, 0.06f, 0.84f);
-        private static readonly Color TextColor = Hex("#efece6");
-        private static readonly Color DimColor = new Color(0.94f, 0.93f, 0.9f, 0.55f);
-        private static readonly Color WarnColor = Hex("#ff9473");
-        private static readonly Color LineColor = new Color(1f, 1f, 1f, 0.09f);
+        // Suit accents: host orange, guest teal.
+        private static readonly Color HostColor = UiKit.Hex("#ff7a1a");
+        private static readonly Color GuestColor = UiKit.Hex("#29d3ff");
 
-        private VisualElement root, menu, hud, noticeBox, roleDot;
-        private Button createButton, joinButton, soloButton;
+        private VisualElement root, menu, hud, noticeBox, roleDot, copyButton, createButton, joinButton, soloButton;
+        private GlassPanel hudPanel;
         private TextField codeField;
-        private Label status, hudCaption, hudCode, hudRole, hudPartner, hudLink, noticeLabel;
-        private Button copyButton;
+        private Label status, hudCode, hudRole, hudPartner, hudLink, noticeLabel;
+        private VisualElement codeRow;
         private SessionPhase shownPhase = (SessionPhase)(-1);
-
-        private static Color Hex(string hex)
-        {
-            ColorUtility.TryParseHtmlString(hex, out Color c);
-            return c;
-        }
-
-        private static Color Alpha(Color c, float a) => new Color(c.r, c.g, c.b, a);
 
         private void Start()
         {
@@ -48,6 +37,9 @@ namespace HollowStar.Game.UI
             root.style.flexGrow = 1;
             // Clicks that miss the UI fall through to the game (camera drag).
             root.pickingMode = PickingMode.Ignore;
+            if (Theme != null) root.styleSheets.Add(Theme);
+            if (Style != null) root.styleSheets.Add(Style);
+            root.AddToClassList("hs-root");
             root.Add(menu = BuildMenu());
             root.Add(hud = BuildHud());
             root.Add(noticeBox = BuildNotice());
@@ -56,144 +48,52 @@ namespace HollowStar.Game.UI
 
         // ---------------------------------------------------------------- layout
 
-        private static void Pad(IStyle s, float v, float h)
+        /// <summary>A big menu button: a title and a one-line hint, tinted by the role it leads to.</summary>
+        private static VisualElement BigButton(string title, string hint, string variant, System.Action onClick)
         {
-            s.paddingTop = s.paddingBottom = v;
-            s.paddingLeft = s.paddingRight = h;
-        }
-
-        private static void Round(IStyle s, float r)
-        {
-            s.borderTopLeftRadius = s.borderTopRightRadius = s.borderBottomLeftRadius = s.borderBottomRightRadius = r;
-        }
-
-        private static void Border(IStyle s, float width, Color c)
-        {
-            s.borderTopWidth = s.borderBottomWidth = s.borderLeftWidth = s.borderRightWidth = width;
-            s.borderTopColor = s.borderBottomColor = s.borderLeftColor = s.borderRightColor = c;
-        }
-
-        private static void NoMargin(IStyle s) => s.marginTop = s.marginBottom = s.marginLeft = s.marginRight = 0;
-
-        private static Label Text(string text, float size, Color color, bool bold = false)
-        {
-            var l = new Label(text);
-            l.style.fontSize = size;
-            l.style.color = color;
-            if (bold) l.style.unityFontStyleAndWeight = FontStyle.Bold;
-            NoMargin(l.style);
-            Pad(l.style, 0, 0);
-            return l;
-        }
-
-        private static VisualElement Panel()
-        {
-            var p = new VisualElement();
-            p.style.backgroundColor = PanelColor;
-            Round(p.style, 10);
-            Border(p.style, 1, LineColor);
-            return p;
-        }
-
-        /// <summary>A big menu button: a coloured edge for the role it leads to, a title and a one-line hint.</summary>
-        private static Button BigButton(string title, string hint, Color accent, System.Action onClick)
-        {
-            var b = new Button(onClick) { text = "" };
-            var s = b.style;
-            NoMargin(s);
-            s.marginTop = 12;
-            Pad(s, 11, 16);
-            s.flexDirection = FlexDirection.Column;
-            s.alignItems = Align.FlexStart;
-            Round(s, 8);
-            Border(s, 1, Alpha(accent, 0.35f));
-            s.borderLeftWidth = 4;
-            s.borderLeftColor = accent;
-            Color idle = Alpha(accent, 0.12f), hover = Alpha(accent, 0.24f);
-            s.backgroundColor = idle;
-            b.RegisterCallback<PointerEnterEvent>(_ => b.style.backgroundColor = hover);
-            b.RegisterCallback<PointerLeaveEvent>(_ => b.style.backgroundColor = idle);
-            b.Add(Text(title, 18, TextColor, true));
-            var h = Text(hint, 13, DimColor);
-            h.style.marginTop = 2;
-            b.Add(h);
-            return b;
-        }
-
-        private static Button SmallButton(string text, System.Action onClick)
-        {
-            var b = new Button(onClick) { text = text, focusable = false };
-            var s = b.style;
-            NoMargin(s);
-            Pad(s, 4, 10);
-            s.fontSize = 12;
-            s.color = TextColor;
-            Round(s, 6);
-            Border(s, 1, LineColor);
-            Color idle = new Color(1f, 1f, 1f, 0.06f), hover = new Color(1f, 1f, 1f, 0.14f);
-            s.backgroundColor = idle;
-            b.RegisterCallback<PointerEnterEvent>(_ => b.style.backgroundColor = hover);
-            b.RegisterCallback<PointerLeaveEvent>(_ => b.style.backgroundColor = idle);
+            var b = UiKit.Button("", onClick, "lobby-btn", variant);
+            // Replace the single label with a title and a hint.
+            var text = b.Q<Label>(className: "hs-btn__text");
+            b.Remove(text);
+            var col = UiKit.El("lobby-btn__col");
+            col.pickingMode = PickingMode.Ignore;
+            var t = UiKit.Text(title, "lobby-btn__title");
+            t.pickingMode = PickingMode.Ignore;
+            var h = UiKit.Text(hint, "lobby-btn__hint");
+            h.pickingMode = PickingMode.Ignore;
+            col.Add(t);
+            col.Add(h);
+            b.Add(col);
             return b;
         }
 
         private VisualElement BuildMenu()
         {
-            var overlay = new VisualElement();
-            var o = overlay.style;
-            o.position = Position.Absolute;
-            o.left = o.right = o.top = o.bottom = 0;
-            o.justifyContent = Justify.Center;
-            o.alignItems = Align.Center;
-            o.backgroundColor = new Color(0.01f, 0.012f, 0.02f, 0.5f);
+            var overlay = UiKit.El("lobby");
+            overlay.Add(new VignetteElement(Color.black, 0.62f));
 
-            var card = Panel();
-            card.style.width = 460;
-            Pad(card.style, 34, 36);
-            overlay.Add(card);
+            var inner = UiKit.El("lobby__inner");
+            overlay.Add(inner);
 
-            var title = Text("HOLLOW STAR", 40, TextColor, true);
-            title.style.letterSpacing = 9;
-            // Letter spacing also trails the last letter; pad the left so the word sits centred.
-            title.style.paddingLeft = 9;
-            title.style.unityTextAlign = TextAnchor.MiddleCenter;
-            card.Add(title);
-            var sub = Text("Two-player co-op survival", 15, DimColor);
-            sub.style.unityTextAlign = TextAnchor.MiddleCenter;
-            sub.style.marginTop = 6;
-            sub.style.marginBottom = 18;
-            card.Add(sub);
+            var titleWrap = UiKit.El("lobby__titlewrap");
+            titleWrap.Add(new TitleGlowElement());
+            titleWrap.Add(UiKit.Text("HOLLOW STAR", "lobby__title"));
+            inner.Add(titleWrap);
+            inner.Add(UiKit.Text("A CO-OP SURVIVAL STORY", "lobby__subtitle"));
 
-            card.Add(createButton = BigButton("Create room", "Host a game and send your partner its code.", HostColor, () => Flow.CreateRoom()));
+            var card = new GlassPanel();
+            card.AddToClassList("lobby__card");
+            inner.Add(card);
 
-            var row = new VisualElement();
-            row.style.flexDirection = FlexDirection.Row;
-            row.style.marginTop = 12;
+            card.Add(createButton = BigButton("CREATE ROOM", "Host a game and send your partner its code.", "lobby-btn--cyan", () => Flow.CreateRoom()));
+
+            codeRow = UiKit.El("lobby__joinrow");
             codeField = new TextField { maxLength = 12 };
+            codeField.AddToClassList("lobby__code");
             codeField.textEdition.placeholder = "ROOM CODE";
             codeField.textEdition.hidePlaceholderOnFocus = true;
-            NoMargin(codeField.style);
-            codeField.style.flexGrow = 1;
-            codeField.style.marginRight = 10;
-            var input = codeField.Q(className: TextField.inputUssClassName);
-            var i = input.style;
-            i.backgroundColor = new Color(1f, 1f, 1f, 0.05f);
-            Round(i, 8);
-            Border(i, 1, Alpha(GuestColor, 0.35f));
-            Pad(i, 0, 14);
-            NoMargin(i);
-            i.fontSize = 22;
-            i.letterSpacing = 5;
-            i.color = DimColor;
-            i.unityFontStyleAndWeight = FontStyle.Bold;
-            i.unityTextAlign = TextAnchor.MiddleLeft;
-            i.minHeight = 58;
-            // Codes are upper case; show what will be sent. The placeholder shares the text colour, so dim it while empty.
-            codeField.RegisterValueChangedCallback(e =>
-            {
-                codeField.SetValueWithoutNotify(e.newValue.ToUpperInvariant());
-                input.style.color = string.IsNullOrEmpty(e.newValue) ? DimColor : TextColor;
-            });
+            // Codes are upper case; show what will be sent.
+            codeField.RegisterValueChangedCallback(e => codeField.SetValueWithoutNotify(e.newValue.ToUpperInvariant()));
             codeField.RegisterCallback<KeyDownEvent>(e =>
             {
                 if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) Flow.JoinRoom(codeField.value);
@@ -201,97 +101,80 @@ namespace HollowStar.Game.UI
             // While typing, keys go to the field only, not to the player or the camera.
             codeField.RegisterCallback<FocusInEvent>(_ => PlayerControls.Blocked = true);
             codeField.RegisterCallback<FocusOutEvent>(_ => PlayerControls.Blocked = false);
-            row.Add(codeField);
-            joinButton = BigButton("Join", "a partner's room", GuestColor, () => Flow.JoinRoom(codeField.value));
-            joinButton.style.marginTop = 0;
-            joinButton.style.width = 128;
-            row.Add(joinButton);
-            card.Add(row);
+            codeRow.Add(codeField);
+            joinButton = UiKit.Button("JOIN", () => Flow.JoinRoom(codeField.value), "hs-btn--amber", "lobby__join");
+            codeRow.Add(joinButton);
+            card.Add(codeRow);
 
-            card.Add(soloButton = BigButton("Play solo", "Explore on your own.", NeutralColor, () => Flow.PlaySolo()));
+            var divider = UiKit.El("lobby__divider");
+            divider.Add(UiKit.El("lobby__rule"));
+            divider.Add(UiKit.Text("OR", "lobby__or"));
+            divider.Add(UiKit.El("lobby__rule"));
+            card.Add(divider);
 
-            status = Text("", 14, DimColor);
-            status.style.marginTop = 20;
-            status.style.minHeight = 20;
-            status.style.whiteSpace = WhiteSpace.Normal;
-            status.style.unityTextAlign = TextAnchor.MiddleCenter;
+            card.Add(soloButton = BigButton("PLAY SOLO", "Explore on your own.", "lobby-btn--ghost", () => Flow.PlaySolo()));
+
+            status = UiKit.Text("", "lobby__status", "wrap");
             card.Add(status);
 
-            var keys = Text("WASD move  ·  Shift sprint  ·  Space dash  ·  drag or Q/E to look", 12, Alpha(DimColor, 0.4f));
-            keys.style.unityTextAlign = TextAnchor.MiddleCenter;
-            keys.style.marginTop = 14;
-            card.Add(keys);
+            var keys = UiKit.El("lobby__keys");
+            AddKey(keys, "WASD", "move");
+            AddKey(keys, "SHIFT", "sprint");
+            AddKey(keys, "SPACE", "dash");
+            AddKey(keys, "F", "gather");
+            AddKey(keys, "R", "use");
+            AddKey(keys, "TAB", "PDA");
+            inner.Add(keys);
             return overlay;
+        }
+
+        private static void AddKey(VisualElement row, string key, string what)
+        {
+            var item = UiKit.El("lobby__key");
+            item.Add(UiKit.Text(key, "keycap", "keycap--small"));
+            item.Add(UiKit.Text(what, "lobby__keytext"));
+            row.Add(item);
         }
 
         private VisualElement BuildHud()
         {
-            var p = Panel();
-            var s = p.style;
-            s.position = Position.Absolute;
-            s.left = 18;
-            s.top = 18;
-            s.minWidth = 270;
-            Pad(s, 14, 18);
+            hudPanel = new GlassPanel(GlassPanel.Look.Chip);
+            hudPanel.AddToClassList("lobby-hud");
 
-            var top = new VisualElement();
-            top.style.flexDirection = FlexDirection.Row;
-            top.style.alignItems = Align.Center;
-            hudCaption = Text("ROOM", 12, DimColor, true);
-            hudCaption.style.letterSpacing = 3;
-            hudCaption.style.marginRight = 10;
-            top.Add(hudCaption);
-            hudCode = Text("", 26, TextColor, true);
-            hudCode.style.letterSpacing = 4;
-            hudCode.style.flexGrow = 1;
-            top.Add(hudCode);
-            copyButton = SmallButton("Copy", () => GUIUtility.systemCopyBuffer = Flow.JoinCode);
-            copyButton.style.marginLeft = 12;
-            top.Add(copyButton);
-            p.Add(top);
-
-            var role = new VisualElement();
-            role.style.flexDirection = FlexDirection.Row;
-            role.style.alignItems = Align.Center;
-            role.style.marginTop = 8;
-            roleDot = new VisualElement();
-            roleDot.style.width = roleDot.style.height = 11;
-            Round(roleDot.style, 5.5f);
-            roleDot.style.marginRight = 8;
+            var role = UiKit.El("lobby-hud__row");
+            roleDot = UiKit.El("hud-dot");
             role.Add(roleDot);
-            hudRole = Text("", 17, TextColor, true);
+            hudRole = UiKit.Text("", "lobby-hud__role");
             role.Add(hudRole);
-            p.Add(role);
+            role.Add(UiKit.El("grow"));
+            hudCode = UiKit.Text("", "lobby-hud__code");
+            role.Add(hudCode);
+            hudPanel.Add(role);
 
-            hudPartner = Text("", 14, TextColor);
-            hudPartner.style.marginTop = 6;
-            p.Add(hudPartner);
-            hudLink = Text("", 13, DimColor);
-            hudLink.style.marginTop = 3;
-            p.Add(hudLink);
+            hudPartner = UiKit.Text("", "lobby-hud__partner", "wrap");
+            hudPanel.Add(hudPartner);
+            hudLink = UiKit.Text("", "lobby-hud__link");
+            hudPanel.Add(hudLink);
 
-            var leave = SmallButton("Leave", () => Flow.Leave());
-            leave.style.marginTop = 10;
-            leave.style.alignSelf = Align.FlexStart;
-            p.Add(leave);
-            return p;
+            var buttons = UiKit.El("lobby-hud__buttons");
+            copyButton = UiKit.Button("COPY CODE", () => GUIUtility.systemCopyBuffer = Flow.JoinCode, "hs-btn--small");
+            buttons.Add(copyButton);
+            var leave = UiKit.Button("LEAVE", () => Flow.Leave(), "hs-btn--small", "hs-btn--ghost", "lobby-hud__leave");
+            buttons.Add(leave);
+            hudPanel.Add(buttons);
+            return hudPanel;
         }
 
         private VisualElement BuildNotice()
         {
-            var strip = new VisualElement { pickingMode = PickingMode.Ignore };
-            var s = strip.style;
-            s.position = Position.Absolute;
-            s.left = s.right = 0;
-            s.top = 20;
-            s.alignItems = Align.Center;
-            noticeLabel = Text("", 16, TextColor, true);
+            var strip = UiKit.El("lobby-notice");
+            strip.pickingMode = PickingMode.Ignore;
+            var pill = new GlassPanel(GlassPanel.Look.Chip) { pickingMode = PickingMode.Ignore };
+            pill.AddToClassList("lobby-notice__pill");
+            noticeLabel = UiKit.Text("", "lobby-notice__text");
             noticeLabel.pickingMode = PickingMode.Ignore;
-            noticeLabel.style.backgroundColor = PanelColor;
-            Round(noticeLabel.style, 18);
-            Border(noticeLabel.style, 1, LineColor);
-            Pad(noticeLabel.style, 8, 20);
-            strip.Add(noticeLabel);
+            pill.Add(noticeLabel);
+            strip.Add(pill);
             return strip;
         }
 
@@ -302,21 +185,14 @@ namespace HollowStar.Game.UI
             if (root != null && Flow != null) Refresh();
         }
 
-        private static void Show(VisualElement e, bool on) => e.style.display = on ? DisplayStyle.Flex : DisplayStyle.None;
-
-        private static void SetText(Label l, string text)
-        {
-            if (l.text != text) l.text = text;
-        }
-
         private void Refresh()
         {
             SessionPhase phase = Flow.Phase;
             if (phase != shownPhase)
             {
                 shownPhase = phase;
-                Show(menu, !Flow.InGame);
-                Show(hud, Flow.InGame);
+                UiKit.Show(menu, !Flow.InGame);
+                UiKit.Show(hud, Flow.InGame);
                 if (Flow.InGame)
                 {
                     // Nothing in the hidden menu may keep focus: Space or Enter would press its buttons.
@@ -333,8 +209,8 @@ namespace HollowStar.Game.UI
             if (!Flow.InGame)
             {
                 bool error = !string.IsNullOrEmpty(Flow.Error);
-                SetText(status, error ? Flow.Error : Flow.Status);
-                status.style.color = error ? WarnColor : DimColor;
+                UiKit.SetText(status, error ? Flow.Error : Flow.Status);
+                UiKit.SetClass(status, "is-error", error);
             }
             else
             {
@@ -343,10 +219,10 @@ namespace HollowStar.Game.UI
 
             float age = Time.unscaledTime - Flow.NoticeTime;
             bool notice = Flow.InGame && !string.IsNullOrEmpty(Flow.Notice) && age < NoticeSeconds;
-            Show(noticeBox, notice);
+            UiKit.Show(noticeBox, notice);
             if (notice)
             {
-                SetText(noticeLabel, Flow.Notice);
+                UiKit.SetText(noticeLabel, Flow.Notice);
                 noticeBox.style.opacity = Mathf.Clamp01((NoticeSeconds - age) / 0.6f);
             }
         }
@@ -354,42 +230,78 @@ namespace HollowStar.Game.UI
         private void RefreshHud()
         {
             bool solo = Flow.IsSolo;
-            SetText(hudCaption, solo ? "SOLO" : "ROOM");
-            SetText(hudCode, solo ? "" : Flow.JoinCode ?? "");
-            Show(copyButton, !solo);
+            UiKit.SetText(hudCode, solo ? "" : Flow.JoinCode ?? "");
+            UiKit.Show(copyButton, !solo);
 
             RoleId role = Flow.LocalRole;
             // RoleId is only identity now: both players are equal, the host wears orange, the guest teal.
             Color accent = role == RoleId.Vanguard ? HostColor : GuestColor;
-            SetText(hudRole, solo ? "You" : Flow.IsHost ? "You (host)" : "You (guest)");
+            UiKit.SetText(hudRole, solo ? "You" : Flow.IsHost ? "You (host)" : "You (guest)");
             hudRole.style.color = accent;
             roleDot.style.backgroundColor = accent;
 
             if (solo)
             {
-                Show(hudPartner, false);
+                UiKit.Show(hudPartner, false);
             }
             else
             {
-                Show(hudPartner, true);
+                UiKit.Show(hudPartner, true);
                 if (Flow.PartnerConnected)
                 {
-                    SetText(hudPartner, "Partner connected");
-                    hudPartner.style.color = TextColor;
+                    UiKit.SetText(hudPartner, "Partner connected");
+                    UiKit.SetClass(hudPartner, "is-warn", false);
+                    UiKit.SetClass(hudPartner, "is-dim", false);
                 }
                 else if (Flow.PartnerLeft)
                 {
-                    SetText(hudPartner, "Partner disconnected. The code still works.");
-                    hudPartner.style.color = WarnColor;
+                    UiKit.SetText(hudPartner, "Partner disconnected. The code still works.");
+                    UiKit.SetClass(hudPartner, "is-warn", true);
+                    UiKit.SetClass(hudPartner, "is-dim", false);
                 }
                 else
                 {
-                    SetText(hudPartner, "Waiting for partner: share the code");
-                    hudPartner.style.color = DimColor;
+                    UiKit.SetText(hudPartner, "Waiting for partner: share the code");
+                    UiKit.SetClass(hudPartner, "is-warn", false);
+                    UiKit.SetClass(hudPartner, "is-dim", true);
                 }
             }
 
-            SetText(hudLink, solo || Flow.RttMs <= 0 ? Flow.TransportLabel : $"{Flow.TransportLabel}  ·  {Flow.RttMs} ms");
+            UiKit.SetText(hudLink, solo || Flow.RttMs <= 0 ? Flow.TransportLabel : $"{Flow.TransportLabel}  ·  {Flow.RttMs} ms");
+        }
+    }
+
+    /// <summary>
+    /// A soft warm halo behind the big title: a square element with a radial gradient, squashed into a wide
+    /// ellipse by the USS scale (Painter2D gradients are circular).
+    /// </summary>
+    public sealed class TitleGlowElement : VisualElement
+    {
+        public TitleGlowElement()
+        {
+            pickingMode = PickingMode.Ignore;
+            AddToClassList("lobby__titleglow");
+            generateVisualContent += OnGenerate;
+            RegisterCallback<GeometryChangedEvent>(_ => MarkDirtyRepaint());
+        }
+
+        private void OnGenerate(MeshGenerationContext mgc)
+        {
+            float w = layout.width, h = layout.height;
+            if (w < 8f || h < 8f) return;
+            var p = mgc.painter2D;
+            var c = new Vector2(w * 0.5f, h * 0.5f);
+            float r = Mathf.Min(w, h) * 0.5f;
+            p.fillGradient = UiKit.Radial(c, r,
+                (0f, new Color(1f, 0.58f, 0.26f, 0.34f)),
+                (0.35f, new Color(1f, 0.55f, 0.24f, 0.15f)),
+                (0.7f, new Color(1f, 0.5f, 0.2f, 0.045f)),
+                (1f, new Color(1f, 0.5f, 0.2f, 0f)));
+            p.BeginPath();
+            p.Arc(c, r, 0f, 360f);
+            p.ClosePath();
+            p.Fill();
+            UiKit.ClearGradients(p);
         }
     }
 }

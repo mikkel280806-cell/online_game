@@ -3,7 +3,37 @@ guid: 2b5095f311de04f2fa45bd29ea03d1e0
 ModelImporter:
   serializedVersion: 24600
   internalIDToNameTable: []
-  externalObjects: {}
+  externalObjects:
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: M_Hazard
+    second: {fileID: 2100000, guid: 17e34da263cd249c988f5bcf4a4d68f9, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: M_Wren_Dark
+    second: {fileID: 2100000, guid: bba8d4336c2084efdadd7c66eb7351ff, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: M_Wren_Glass
+    second: {fileID: 2100000, guid: 378b463c53e8c4a418ec7de5b557da7a, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: M_Wren_Hull
+    second: {fileID: 2100000, guid: 7873b572b847749b5b9d14557ee31bf6, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: M_Wren_Lamp
+    second: {fileID: 2100000, guid: d44e27ab62dcd4b5abd429376b453c71, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: M_Wren_Metal
+    second: {fileID: 2100000, guid: c1680da7ecf0e4e488009774b8f6320f, type: 2}
   materials:
     materialImportMode: 2
     materialName: 0
@@ -31,7 +61,7 @@ ModelImporter:
     extraExposedTransformPaths: []
     extraUserProperties: []
     clipAnimations: []
-    isReadable: 0
+    isReadable: 1
   meshes:
     lODScreenPercentages: []
     globalScale: 1
@@ -44,8 +74,8 @@ ModelImporter:
     importPhysicalCameras: 1
     importVisibility: 1
     importBlendShapes: 1
-    importCameras: 1
-    importLights: 1
+    importCameras: 0
+    importLights: 0
     nodeNameCollisionStrategy: 1
     fileIdsGeneration: 2
     swapUVChannels: 0

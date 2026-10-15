@@ -1,5 +1,6 @@
 using HollowStar.Game;
 using HollowStar.Game.Net;
+using HollowStar.Game.Survival;
 using HollowStar.Game.UI;
 using Unity.Netcode;
 using Unity.Netcode.Components;
@@ -17,6 +18,7 @@ namespace HollowStar.EditorTools
     public static class CoopBuilder
     {
         public const string PlayerPrefabPath = "Assets/_Project/Prefabs/NetPlayer.prefab";
+        public const string WorldPrefabPath = "Assets/_Project/Prefabs/WorldState.prefab";
         private const string UiFolder = "Assets/_Project/UI";
         private const int IgnoreRaycastLayer = 2;
 
@@ -43,6 +45,8 @@ namespace HollowStar.EditorTools
             cc.skinWidth = 0.04f;
             go.AddComponent<PlayerMotor>();
             go.AddComponent<LocalPlayer>().enabled = false;
+            // Inventory, vitals, interaction: switched on for the owner at spawn, like LocalPlayer.
+            go.AddComponent<Survivor>().enabled = false;
             go.AddComponent<NetworkObject>();
             var nt = go.AddComponent<NetworkTransform>();
             nt.AuthorityMode = NetworkTransform.AuthorityModes.Owner;
@@ -65,6 +69,18 @@ namespace HollowStar.EditorTools
             return prefab;
         }
 
+        /// <summary>The shared world state (depleted nodes, game clock): spawned once by whoever hosts.</summary>
+        public static GameObject BuildWorldPrefab()
+        {
+            var go = new GameObject("WorldState");
+            go.AddComponent<NetworkObject>();
+            go.AddComponent<WorldState>();
+            System.IO.Directory.CreateDirectory("Assets/_Project/Prefabs");
+            var prefab = PrefabUtility.SaveAsPrefabAsset(go, WorldPrefabPath);
+            Object.DestroyImmediate(go);
+            return prefab;
+        }
+
         /// <summary>NetworkManager on Unity Transport (Relay data is filled in per session) plus the session flow.</summary>
         public static SessionFlow BuildNetwork(GameObject playerPrefab)
         {
@@ -73,6 +89,9 @@ namespace HollowStar.EditorTools
             var transport = go.AddComponent<UnityTransport>();
             manager.NetworkConfig.NetworkTransport = transport;
             manager.NetworkConfig.PlayerPrefab = playerPrefab;
+            var worldPrefab = BuildWorldPrefab();
+            // (The prefab asset lands in Assets/DefaultNetworkPrefabs on its own; adding it again would register it twice.)
+            go.AddComponent<WorldSpawner>().WorldPrefab = worldPrefab.GetComponent<NetworkObject>();
             // The server picks spawn points and turns away a third player (SessionFlow.Approve).
             manager.NetworkConfig.ConnectionApproval = true;
             // Both machines load Vigil themselves; netcode only has to spawn the players.
@@ -92,11 +111,15 @@ namespace HollowStar.EditorTools
             var go = new GameObject("UI");
             var doc = go.AddComponent<UIDocument>();
             doc.panelSettings = PanelSettingsAsset();
-            go.AddComponent<LobbyUI>().Flow = flow;
+            var lobby = go.AddComponent<LobbyUI>();
+            lobby.Flow = flow;
+            SurvivalUiBuilder.PrepareAssets();
+            lobby.Theme = SurvivalUiBuilder.Sheet("Theme");
+            lobby.Style = SurvivalUiBuilder.Sheet("Lobby");
         }
 
         /// <summary>Scales the UI with window height, on Unity's default runtime theme (restyled in code).</summary>
-        private static PanelSettings PanelSettingsAsset()
+        public static PanelSettings PanelSettingsAsset()
         {
             System.IO.Directory.CreateDirectory(UiFolder);
             string themePath = $"{UiFolder}/HollowStarTheme.tss";
@@ -115,7 +138,7 @@ namespace HollowStar.EditorTools
             }
             settings.themeStyleSheet = AssetDatabase.LoadAssetAtPath<ThemeStyleSheet>(themePath);
             settings.scaleMode = PanelScaleMode.ScaleWithScreenSize;
-            settings.referenceResolution = new Vector2Int(1600, 900);
+            settings.referenceResolution = new Vector2Int(1920, 1080);
             settings.screenMatchMode = PanelScreenMatchMode.MatchWidthOrHeight;
             settings.match = 1f;
             EditorUtility.SetDirty(settings);

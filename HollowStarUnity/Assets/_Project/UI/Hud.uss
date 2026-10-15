@@ -1,0 +1,597 @@
+/* Survival HUD. Reference 1920 x 1080 (the panel scales with the screen height). */
+
+.hud {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    transition: opacity 0.2s ease-out;
+}
+
+/* The PDA is up: the HUD stays as a faint ghost so it never fights the panel. */
+.hud.is-pda { opacity: 0.18; }
+
+.hud-vignette {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+/* ---------- Top left: objective, room, partner ---------- */
+
+.hud-topleft {
+    position: absolute;
+    left: 30px;
+    top: 30px;
+    max-width: 460px;
+    align-items: flex-start;
+}
+
+.hud-objective {
+    min-width: 330px;
+    padding: 14px 26px 17px 20px;
+}
+
+.hud-objective__head {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 7px;
+}
+
+.hud-objective__icon {
+    width: 15px;
+    height: 15px;
+    margin-right: 10px;
+}
+
+.hud-objective__text {
+    font-size: 21px;
+    color: var(--ink);
+    white-space: normal;
+}
+
+.hud-session {
+    align-self: flex-start;
+    margin-top: 12px;
+    padding: 10px 18px 11px 16px;
+}
+
+.hud-session__row {
+    flex-direction: row;
+    align-items: center;
+    height: 26px;
+}
+
+.hud-dot {
+    width: 8px;
+    height: 8px;
+    margin-right: 11px;
+    border-radius: 4px;
+    background-color: var(--ok);
+}
+
+.hud-session__code {
+    -unity-font-definition: url("Fonts/Orbitron-Bold.asset");
+    font-size: 21px;
+    letter-spacing: 5px;
+    color: var(--amber);
+    margin-left: 12px;
+}
+
+.hud-partner {
+    margin-top: 4px;
+    height: 24px;
+}
+
+.hud-partner__name {
+    color: var(--ink);
+    margin-right: 14px;
+}
+
+.hud-partner__bars {
+    flex-direction: row;
+    align-items: center;
+}
+
+.hud-partner__tag {
+    -unity-font-definition: url("Fonts/Orbitron-Medium.asset");
+    font-size: 10px;
+    letter-spacing: 1.4px;
+    color: var(--ink-faint);
+    margin-right: 6px;
+}
+
+.hud-partner__bar {
+    width: 66px;
+    height: 6px;
+    margin-right: 14px;
+}
+
+/* ---------- Top centre: compass ---------- */
+
+.hud-compass-wrap {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 26px;
+    align-items: center;
+}
+
+.hud-compass {
+    width: 660px;
+    height: 58px;
+}
+
+.hud-compass__strip {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+.hud-compass__card {
+    position: absolute;
+    top: 10px;
+    width: 40px;
+    -unity-text-align: upper-center;
+    -unity-font-definition: url("Fonts/Orbitron-Bold.asset");
+}
+
+.hud-compass__card.is-major {
+    font-size: 16px;
+    color: var(--ink);
+}
+
+.hud-compass__card.is-minor {
+    -unity-font-definition: url("Fonts/Orbitron-Medium.asset");
+    font-size: 11px;
+    color: var(--ink-dim);
+    top: 13px;
+}
+
+.hud-compass__marker {
+    position: absolute;
+    top: 66px;
+    width: 120px;
+    -unity-text-align: upper-center;
+    font-size: 15px;
+    letter-spacing: 1.6px;
+    -unity-font-definition: url("Fonts/Rajdhani-Bold.asset");
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+}
+
+.hud-heading {
+    -unity-font-definition: url("Fonts/Rajdhani-Bold.asset");
+    margin-top: 7px;
+    font-size: 15px;
+    letter-spacing: 3px;
+    color: var(--cyan);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+}
+
+/* ---------- Top right: toasts ---------- */
+
+.hud-toasts {
+    position: absolute;
+    right: 30px;
+    top: 30px;
+    width: 440px;
+    align-items: flex-end;
+}
+
+.hud-toast {
+    flex-direction: row;
+    align-items: center;
+    padding: 11px 22px 12px 16px;
+    margin-bottom: 9px;
+    opacity: 0;
+    translate: 48px 0;
+    transition: opacity 0.22s ease-out, translate 0.28s ease-out;
+}
+
+.hud-toast.is-on {
+    opacity: 1;
+    translate: 0 0;
+}
+
+.hud-toast.is-out {
+    opacity: 0;
+    translate: 48px 0;
+    transition: opacity 0.3s ease-in, translate 0.32s ease-in;
+}
+
+.hud-toast__icon {
+    width: 15px;
+    height: 15px;
+    margin-right: 12px;
+}
+
+.hud-toast__text {
+    -unity-font-definition: url("Fonts/Rajdhani-Bold.asset");
+    font-size: 20px;
+    letter-spacing: 2px;
+    color: var(--ink);
+}
+
+/* ---------- Scan card ---------- */
+
+.hud-scan-wrap {
+    position: absolute;
+    right: 30px;
+    top: 36%;
+}
+
+.hud-scan {
+    width: 410px;
+    padding: 16px 22px 18px;
+    opacity: 0;
+    translate: 48px 0;
+    transition: opacity 0.25s ease-out, translate 0.3s ease-out;
+}
+
+.hud-scan.is-on {
+    opacity: 1;
+    translate: 0 0;
+}
+
+.hud-scan__head {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.hud-scan__headicon {
+    width: 16px;
+    height: 16px;
+    margin-right: 10px;
+}
+
+.hud-scan__row {
+    flex-direction: row;
+    align-items: center;
+}
+
+.hud-scan__badge {
+    width: 68px;
+    height: 68px;
+    margin-right: 16px;
+}
+
+.hud-scan__glyph {
+    position: absolute;
+    left: 14px;
+    top: 14px;
+    width: 40px;
+    height: 40px;
+}
+
+.hud-scan__titlecol {
+    flex-grow: 1;
+    align-items: flex-start;
+}
+
+.hud-scan__title {
+    -unity-font-definition: url("Fonts/Orbitron-Bold.asset");
+    font-size: 21px;
+    letter-spacing: 1.5px;
+    margin-bottom: 8px;
+    color: var(--ink);
+}
+
+.hud-scan__chip {
+    padding: 2px 9px 2px 11px;
+}
+
+.hud-scan__chiptext {
+    -unity-font-definition: url("Fonts/Orbitron-Medium.asset");
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--cyan);
+}
+
+.hud-scan__desc {
+    margin-top: 14px;
+    font-size: 19px;
+    color: #c4d0df;
+    white-space: normal;
+}
+
+.hud-scan__yields {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-top: 12px;
+}
+
+.hud-scan__yieldlabel {
+    margin-right: 12px;
+}
+
+.hud-scan__yield {
+    flex-direction: row;
+    align-items: center;
+    margin-right: 8px;
+    padding: 3px 10px 3px 6px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.14);
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.hud-scan__yieldglyph {
+    width: 18px;
+    height: 18px;
+    margin-right: 6px;
+}
+
+.hud-scan__yieldname {
+    font-size: 16px;
+    color: var(--ink);
+}
+
+/* ---------- Centre: crosshair, reticle, prompt ---------- */
+
+.hud-xhair {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 40px;
+    height: 40px;
+    margin-left: -20px;
+    margin-top: -20px;
+}
+
+.hud-reticle {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 156px;
+    height: 156px;
+    margin-left: -78px;
+    margin-top: -78px;
+}
+
+.hud-prompt-wrap {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 58%;
+    align-items: center;
+}
+
+.hud-prompt {
+    min-width: 280px;
+    padding: 11px 22px 13px;
+    align-items: stretch;
+    opacity: 0;
+    translate: 0 10px;
+    transition: opacity 0.15s ease-out, translate 0.15s ease-out;
+}
+
+.hud-prompt.is-on {
+    opacity: 1;
+    translate: 0 0;
+}
+
+.hud-prompt__row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+}
+
+.hud-prompt__text {
+    -unity-font-definition: url("Fonts/Rajdhani-SemiBold.asset");
+    font-size: 22px;
+    letter-spacing: 0.5px;
+    color: var(--ink);
+}
+
+.hud-prompt__detail {
+    -unity-text-align: upper-center;
+    font-size: 17px;
+    margin-top: 3px;
+    color: var(--danger);
+}
+
+.hud-prompt__bar {
+    height: 5px;
+    margin-top: 10px;
+}
+
+/* ---------- Bottom left: vitals ---------- */
+
+.hud-vitals {
+    position: absolute;
+    left: 30px;
+    bottom: 30px;
+    width: 372px;
+    padding: 13px 22px 14px 20px;
+}
+
+.hud-vitals__head {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 9px;
+    padding-bottom: 9px;
+    border-bottom-width: 1px;
+    border-color: rgba(140, 200, 255, 0.14);
+}
+
+.hud-vitals__clock {
+    -unity-font-definition: url("Fonts/Rajdhani-Bold.asset");
+    font-size: 15px;
+    letter-spacing: 2.4px;
+    color: var(--ink-dim);
+}
+
+.hud-vitals__zone {
+    -unity-font-definition: url("Fonts/Rajdhani-Bold.asset");
+    font-size: 15px;
+    letter-spacing: 2.4px;
+}
+
+.hud-vital {
+    flex-direction: row;
+    align-items: center;
+    height: 33px;
+}
+
+.hud-vital__glyph {
+    width: 23px;
+    height: 23px;
+    margin-right: 11px;
+}
+
+.hud-vital__name {
+    width: 84px;
+    font-size: 13px;
+    letter-spacing: 2.2px;
+}
+
+.hud-vital__bar {
+    flex-grow: 1;
+    height: 9px;
+    margin-left: 2px;
+    margin-right: 14px;
+}
+
+.hud-vital__value {
+    -unity-font-definition: url("Fonts/Rajdhani-SemiBold.asset");
+    width: 52px;
+    font-size: 21px;
+    -unity-text-align: middle-right;
+    color: var(--ink);
+}
+
+/* ---------- Bottom centre: hotbar ---------- */
+
+.hud-hotbar-wrap {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 30px;
+    align-items: center;
+}
+
+.hud-hotbar__caption-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 14px;
+    height: 24px;
+}
+
+.hud-hotbar__caption {
+    -unity-font-definition: url("Fonts/Rajdhani-Bold.asset");
+    font-size: 20px;
+    letter-spacing: 3px;
+    color: var(--ink);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+.hud-hotbar__hint {
+    margin-left: 14px;
+    color: var(--cyan);
+    font-size: 11px;
+}
+
+.hud-hotbar {
+    flex-direction: row;
+}
+
+.hud-slot {
+    width: 80px;
+    height: 80px;
+    margin-left: 5px;
+    margin-right: 5px;
+}
+
+.hud-slot__glyph {
+    position: absolute;
+    left: 20px;
+    top: 18px;
+    width: 40px;
+    height: 40px;
+}
+
+.hud-slot__key {
+    -unity-font-definition: url("Fonts/Orbitron-Medium.asset");
+    position: absolute;
+    left: 9px;
+    top: 6px;
+    font-size: 13px;
+    letter-spacing: 1px;
+    color: var(--ink-dim);
+}
+
+.hud-slot__key.is-selected {
+    color: var(--cyan);
+}
+
+.hud-slot__count {
+    -unity-font-definition: url("Fonts/Rajdhani-Bold.asset");
+    position: absolute;
+    right: 9px;
+    bottom: 5px;
+    font-size: 18px;
+    color: var(--ink);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+/* ---------- Death ---------- */
+
+.hud-death {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgb(8, 1, 3);
+    opacity: 0;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 1.5s ease-in;
+}
+
+.hud-death.is-on {
+    opacity: 0.93;
+}
+
+.hud-death__col {
+    align-items: center;
+}
+
+.hud-death__title {
+    -unity-font-definition: url("Fonts/Orbitron-Bold.asset");
+    font-size: 64px;
+    letter-spacing: 16px;
+    padding-left: 16px;
+    color: #ff6e6e;
+    text-shadow: 0 0 14px rgba(255, 60, 60, 0.55);
+}
+
+.hud-death__rule {
+    width: 380px;
+    height: 1px;
+    margin-top: 24px;
+    margin-bottom: 24px;
+    background-color: rgba(255, 107, 107, 0.5);
+}
+
+.hud-death__count {
+    -unity-font-definition: url("Fonts/Orbitron-Medium.asset");
+    font-size: 21px;
+    letter-spacing: 8px;
+    padding-left: 8px;
+    color: var(--ink-dim);
+}
+
+.hud.is-dead .hud-hotbar-wrap,
+.hud.is-dead .hud-prompt-wrap,
+.hud.is-dead .hud-xhair {
+    opacity: 0;
+}

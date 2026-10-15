@@ -15,6 +15,10 @@ namespace HollowStar.Game
         private PlayerMotor motor;
         private PlayerControls controls;
 
+        /// <summary>This machine's input, while the player is enabled (null otherwise). Shared with gameplay components.</summary>
+        public PlayerControls Controls => controls;
+        public PlayerMotor Motor => motor;
+
         private void Awake() => motor = GetComponent<PlayerMotor>();
 
         private void OnEnable()
@@ -50,7 +54,7 @@ namespace HollowStar.Game
 
         private void Update()
         {
-            bool blocked = PlayerControls.Blocked;
+            bool blocked = PlayerControls.Blocked || Survival.SurvivorHub.PdaOpen;
             Vector2 a = blocked ? Vector2.zero : LaunchArgs.AutoWalk ? AutoWalkAxis() : controls.MoveAxis;
             Vector3 fwd = Vector3.forward, right = Vector3.right;
             if (Rig != null)

@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 8865153684561445676}
   - component: {fileID: 4014566318840671925}
   - component: {fileID: 4659556446315033724}
+  - component: {fileID: 8546879689426922224}
   - component: {fileID: 765259431450719173}
   - component: {fileID: 7788457230506405820}
   - component: {fileID: 8300939896737686627}
@@ -91,6 +92,18 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: HollowStar.Game::HollowStar.Game.LocalPlayer
   Rig: {fileID: 0}
+--- !u!114 &8546879689426922224
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3176287462357518984}
+  m_Enabled: 0
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 655ab2bee01ae496db35ef1a4060012d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: HollowStar.Game::HollowStar.Game.Survival.Survivor
 --- !u!114 &765259431450719173
 MonoBehaviour:
   m_ObjectHideFlags: 0

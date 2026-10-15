@@ -40,6 +40,7 @@ namespace HollowStar.EditorTools
             vigil.Near = near;
             vigil.Far = far;
             OutpostGreyboxBuilder.Build(world.transform);
+            ResourceNodeBuilder.Build(world.transform, near);
 
             BuildLighting();
             BuildPostProcessing();
@@ -48,6 +49,7 @@ namespace HollowStar.EditorTools
             var playerPrefab = CoopBuilder.BuildPlayerPrefab(CharacterImport.Import());
             var flow = CoopBuilder.BuildNetwork(playerPrefab);
             CoopBuilder.BuildUI(flow);
+            SurvivalUiBuilder.Build();
 
             System.IO.Directory.CreateDirectory("Assets/_Project/Scenes");
             EditorSceneManager.SaveScene(scene, ScenePath);

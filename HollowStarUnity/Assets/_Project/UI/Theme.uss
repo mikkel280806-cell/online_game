@@ -1,0 +1,221 @@
+/* Hollow Star UI theme: the browser version's look (src/ui/style.css) in USS.
+   Dark tinted glass, thin cyan edges, Orbitron titles and labels, Rajdhani text. Glass panels, bars and
+   glyphs are painted in C# with Painter2D (UiElements.cs, Glyphs.cs); this file holds the tokens, type, and
+   the pieces that are plain boxes (buttons, chips, key caps) with their hover and motion transitions. */
+
+:root {
+    --ink: #e8eef6;
+    --ink-dim: #9aa8bb;
+    --ink-faint: #627086;
+    --cyan: #6fe3ff;
+    --amber: #ffae5c;
+    --danger: #ff6b6b;
+    --ok: #5cff9b;
+    --water: #5aa9ff;
+    --glass-edge: rgba(140, 200, 255, 0.2);
+    --cyan-edge: rgba(111, 227, 255, 0.45);
+    --btn-top: rgba(111, 227, 255, 0.18);
+    --btn-fill: rgba(111, 227, 255, 0.11);
+}
+
+/* ---------- Root and type ---------- */
+
+.hs-root {
+    -unity-font-definition: url("Fonts/Rajdhani-Medium.asset");
+    color: var(--ink);
+    font-size: 18px;
+}
+
+/* Every label made by UiKit.Text carries this: it clears the default theme's label margin and padding. It has
+   the same specificity as the component classes that follow it, so those can set margins again. */
+.hs-text {
+    margin: 0;
+    padding: 0;
+    -unity-text-align: upper-left;
+    white-space: nowrap;
+}
+
+.f-title { -unity-font-definition: url("Fonts/Orbitron-Bold.asset"); }
+.f-label { -unity-font-definition: url("Fonts/Orbitron-Medium.asset"); }
+.f-semi { -unity-font-definition: url("Fonts/Orbitron-SemiBold.asset"); }
+.f-body { -unity-font-definition: url("Fonts/Rajdhani-Medium.asset"); }
+.f-reg { -unity-font-definition: url("Fonts/Rajdhani-Regular.asset"); }
+.f-value { -unity-font-definition: url("Fonts/Rajdhani-SemiBold.asset"); }
+.f-strong { -unity-font-definition: url("Fonts/Rajdhani-Bold.asset"); }
+
+/* Small uppercase Orbitron caption: OBJECTIVE, OXYGEN, DATABANK... */
+.caps {
+    -unity-font-definition: url("Fonts/Orbitron-Medium.asset");
+    font-size: 13px;
+    letter-spacing: 2.6px;
+    color: var(--ink-dim);
+}
+
+.caps--cyan { color: var(--cyan); }
+.caps--amber { color: var(--amber); }
+.caps--danger { color: var(--danger); }
+.caps--ok { color: var(--ok); }
+
+.dim { color: var(--ink-dim); }
+.faint { color: var(--ink-faint); }
+.is-danger { color: var(--danger); }
+.is-ok { color: var(--ok); }
+.is-amber { color: var(--amber); }
+
+/* Wraps long text (descriptions). */
+.wrap { white-space: normal; }
+
+/* ---------- Glass, glyphs, bars ---------- */
+
+.hs-glass { flex-shrink: 0; }
+.hs-glyph { flex-shrink: 0; }
+.hs-bar { flex-shrink: 0; height: 8px; }
+
+.hs-sheen {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+/* ---------- Buttons (the web .btn) ---------- */
+
+.hs-btn {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 20px;
+    background-color: var(--btn-fill);
+    border-width: 1px;
+    border-color: var(--cyan-edge);
+    border-radius: 10px;
+    transition: background-color 0.15s ease-out, border-color 0.15s ease-out, translate 0.1s ease-out, opacity 0.15s;
+}
+
+.hs-btn__text {
+    -unity-font-definition: url("Fonts/Rajdhani-SemiBold.asset");
+    font-size: 18px;
+    letter-spacing: 2.2px;
+    color: var(--ink);
+    -unity-text-align: middle-center;
+}
+
+.hs-btn:hover {
+    background-color: rgba(111, 227, 255, 0.26);
+    border-color: var(--cyan);
+}
+
+.hs-btn:active {
+    translate: 0 1px;
+    background-color: rgba(111, 227, 255, 0.34);
+}
+
+.hs-btn:disabled {
+    opacity: 0.42;
+}
+
+.hs-btn--amber {
+    background-color: rgba(255, 174, 92, 0.12);
+    border-color: rgba(255, 174, 92, 0.55);
+}
+
+.hs-btn--amber:hover {
+    background-color: rgba(255, 174, 92, 0.26);
+    border-color: var(--amber);
+}
+
+.hs-btn--ghost {
+    background-color: rgba(255, 255, 255, 0);
+    border-color: rgba(255, 255, 255, 0.18);
+}
+
+.hs-btn--ghost .hs-sheen { display: none; }
+
+.hs-btn--ghost .hs-btn__text {
+    color: var(--ink-dim);
+    font-size: 16px;
+}
+
+.hs-btn--ghost:hover {
+    background-color: rgba(255, 255, 255, 0.07);
+    border-color: rgba(255, 255, 255, 0.4);
+}
+
+.hs-btn--danger {
+    background-color: rgba(255, 107, 107, 0.08);
+    border-color: rgba(255, 107, 107, 0.42);
+}
+
+.hs-btn--danger:hover {
+    background-color: rgba(255, 107, 107, 0.22);
+    border-color: var(--danger);
+}
+
+.hs-btn--danger .hs-btn__text {
+    color: #ffb4b4;
+}
+
+.hs-btn--small {
+    padding: 6px 12px;
+    border-radius: 8px;
+}
+
+.hs-btn--small .hs-btn__text {
+    font-size: 15px;
+    letter-spacing: 1.6px;
+}
+
+/* ---------- Key cap (the web kbd) ---------- */
+
+.keycap {
+    -unity-font-definition: url("Fonts/Rajdhani-Bold.asset");
+    font-size: 16px;
+    color: var(--ink);
+    min-width: 26px;
+    height: 26px;
+    padding: 0 7px;
+    margin-right: 10px;
+    -unity-text-align: middle-center;
+    border-width: 1px;
+    border-bottom-width: 3px;
+    border-color: rgba(255, 255, 255, 0.34);
+    border-radius: 6px;
+    background-color: rgba(255, 255, 255, 0.07);
+}
+
+/* ---------- Chip (category and status pills) ---------- */
+
+.chip {
+    -unity-font-definition: url("Fonts/Orbitron-Medium.asset");
+    font-size: 11px;
+    letter-spacing: 2px;
+    padding: 4px 10px 4px 12px;
+    border-radius: 6px;
+    border-width: 1px;
+    color: var(--cyan);
+    border-color: rgba(111, 227, 255, 0.4);
+    background-color: rgba(111, 227, 255, 0.10);
+}
+
+/* ---------- Motion helpers ---------- */
+
+.fade {
+    opacity: 0;
+    transition: opacity 0.2s ease-out;
+}
+
+.fade.is-on { opacity: 1; }
+
+.slide-in {
+    opacity: 0;
+    translate: 0 14px;
+    transition: opacity 0.2s ease-out, translate 0.2s ease-out;
+}
+
+.slide-in.is-on {
+    opacity: 1;
+    translate: 0 0;
+}
+
+.grow { flex-grow: 1; }

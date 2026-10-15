@@ -1,15 +1,17 @@
 using System;
 using System.Collections.Generic;
 using HollowStar.Core;
+using HollowStar.Game.Survival;
 using UnityEditor;
 using UnityEngine;
 
 namespace HollowStar.EditorTools
 {
     /// <summary>
-    /// Greybox of Survey Outpost Kestrel-7 and the dropship Wren, placed from OutpostLayout.json
-    /// (exported from the web version's src/env/props/layout.ts). Simple shapes with real colliders
-    /// at the right scale; the Blender models replace them piece by piece.
+    /// Greybox of Survey Outpost Kestrel-7, placed from OutpostLayout.json (exported from the web version's
+    /// src/env/props/layout.ts), plus the Blender dropship Wren (<see cref="WrenBuilder"/>). Simple shapes with
+    /// real colliders at the right scale; the Blender models replace them piece by piece. The habs get pressurised
+    /// zones and the outpost can be scanned.
     /// </summary>
     public static class OutpostGreyboxBuilder
     {
@@ -144,7 +146,8 @@ namespace HollowStar.EditorTools
                     Quaternion.identity, new Vector3(0.25f, 0.08f, 0.25f), k % 2 == 0 ? hazard : warmLamp, false);
             }
 
-            BuildShip(data.ship, root, offWhite, gunmetal, hazard);
+            // The Wren is the Blender model; the pad is already under it.
+            WrenBuilder.Build(root, new Vector3(data.ship.x, data.ship.y, data.ship.z), data.ship.yaw);
 
             // ---- habitat modules and tunnels ---------------------------------------------------
             foreach (var h in data.habs)
@@ -165,6 +168,7 @@ namespace HollowStar.EditorTools
                 // A warm window strip so the lit habs read at dusk.
                 Prim(PrimitiveType.Cube, h.name + "_Window", root, c + side * (h.radius * 0.97f) + Vector3.up * 0.3f,
                     Quaternion.LookRotation(axis), new Vector3(0.05f, 0.35f, 0.9f), warmLamp, false);
+                AddHabVolumes(root, h, c);
             }
             foreach (var t in data.tunnels)
                 Tube("Tunnel", root, new Vector3(t.ax, t.y, t.az), new Vector3(t.bx, t.y, t.bz), t.radius, offWhite);
@@ -197,6 +201,7 @@ namespace HollowStar.EditorTools
             var mast = data.mast;
             Prim(PrimitiveType.Cube, "Mast_Footing", root, new Vector3(mast.x, 0.2f, mast.z), Quaternion.identity, new Vector3(2.4f, 0.4f, 2.4f), concrete);
             Prim(PrimitiveType.Cube, "Mast", root, new Vector3(mast.x, mast.height / 2f, mast.z), Quaternion.identity, new Vector3(0.7f, mast.height, 0.7f), gunmetal);
+            AddScanVolume(root, "Mast_Scan", new Vector3(mast.x, mast.height / 2f, mast.z), new Vector3(4f, mast.height, 4f));
             Prim(PrimitiveType.Sphere, "Mast_Beacon", root, new Vector3(mast.x, mast.height + 0.3f, mast.z), Quaternion.identity, Vector3.one * 0.45f, beacon, false);
             Prim(PrimitiveType.Cube, "Mast_Cabinet", root, new Vector3(data.cabinet.x, 0.75f, data.cabinet.z), Quaternion.identity, new Vector3(1.1f, 1.5f, 0.8f), hazard);
             Prim(PrimitiveType.Cube, "Pad_Pedestal", root, new Vector3(data.pedestal.x, 0.6f, data.pedestal.z), Yaw(data.pedestal.yaw), new Vector3(0.8f, 1.2f, 0.6f), hazard);
@@ -249,91 +254,42 @@ namespace HollowStar.EditorTools
             return root.gameObject;
         }
 
-        /// <summary>The Wren: lofted hull and nacelles from the footprint profiles, plus the lowered ramp.</summary>
-        private static void BuildShip(Ship s, Transform root, Material hullMat, Material dark, Material hazard)
+        private const int IgnoreRaycastLayer = 2;
+
+        /// <summary>A pressurised zone inside a hab (the hull is solid for now, so nobody can stand in it until the habs get doors in U5), and a box to scan the outpost from.</summary>
+        private static void AddHabVolumes(Transform root, Hab h, Vector3 centre)
         {
-            var ship = new GameObject("Wren_Greybox").transform;
-            ship.SetParent(root, false);
-            ship.SetLocalPositionAndRotation(new Vector3(s.x, s.y, s.z), Yaw(s.yaw));
+            Vector3 inner = h.alongX
+                ? new Vector3(h.length * 0.8f, h.radius * 1.5f, h.radius * 1.7f)
+                : new Vector3(h.radius * 1.7f, h.radius * 1.5f, h.length * 0.8f);
+            var zone = new GameObject(h.name + "_Zone");
+            zone.transform.SetParent(root, false);
+            zone.transform.position = centre;
+            zone.layer = IgnoreRaycastLayer;
+            var box = zone.AddComponent<BoxCollider>();
+            box.isTrigger = true;
+            box.size = inner;
+            zone.AddComponent<PressurisedZone>().Label = h.name;
 
-            float maxW = 0f;
-            foreach (var p in s.hull) maxW = Mathf.Max(maxW, p.w);
-            var hull = new List<Profile>();
-            foreach (var p in s.hull)
-                if (p.z <= s.rampHingeZ + 0.6f) hull.Add(p);
-            // Fuselage: centre line at 3 m, deeper amidships.
-            AddLoft(ship, "Hull", hull, 0f, z => 2.9f, w => w * 1.05f, w => 0.5f + 1.7f * w / maxW, hullMat);
-            // Tail section above the open ramp.
-            var tail = new List<Profile> { new Profile { z = s.rampHingeZ, w = 1.9f }, new Profile { z = s.tailZ, w = 1.6f } };
-            AddLoft(ship, "Tail", tail, 0f, z => 3.9f, w => w, w => 0.75f, hullMat);
-            foreach (float side in new[] { -1f, 1f })
-                AddLoft(ship, side < 0 ? "Nacelle_L" : "Nacelle_R", new List<Profile>(s.nacelle), side * s.nacelleX, z => s.nacelleY, w => w, w => w, dark);
-
-            // Ramp from the hinge down to the pad.
-            float run = Mathf.Sqrt(s.rampLength * s.rampLength - s.floorY * s.floorY);
-            var hinge = new Vector3(0f, s.floorY, s.rampHingeZ);
-            var lip = new Vector3(0f, 0.02f, s.rampHingeZ + run);
-            var ramp = Prim(PrimitiveType.Cube, "Ramp", ship, (hinge + lip) / 2f, Quaternion.LookRotation(lip - hinge), new Vector3(s.rampWidth, 0.12f, s.rampLength), dark);
-            ramp.isStatic = true;
-            Prim(PrimitiveType.Cube, "Ramp_Stripe", ship, (hinge + lip) / 2f + Vector3.up * 0.07f, Quaternion.LookRotation(lip - hinge), new Vector3(s.rampWidth * 0.95f, 0.02f, 0.4f), hazard, false);
-            // Landing gear.
-            foreach (var g in new[] { new Vector3(-1.6f, 0f, 4.2f), new Vector3(1.6f, 0f, 4.2f), new Vector3(0f, 0f, -7.3f) })
-                Prim(PrimitiveType.Cylinder, "Gear", ship, g + Vector3.up * 0.9f, Quaternion.identity, new Vector3(0.35f, 0.9f, 0.35f), dark, false);
+            Vector3 outer = h.alongX
+                ? new Vector3(h.length + 2f, h.radius * 2f + 2f, h.radius * 2f + 3f)
+                : new Vector3(h.radius * 2f + 3f, h.radius * 2f + 2f, h.length + 2f);
+            AddScanVolume(root, h.name + "_Scan", centre, outer);
         }
 
-        /// <summary>A tube along local Z with a rounded-box cross-section that follows a (z, half-width) profile.</summary>
-        private static void AddLoft(Transform parent, string name, List<Profile> profile, float x0, Func<float, float> centreY, Func<float, float> halfW, Func<float, float> halfH, Material mat)
+        private static void AddScanVolume(Transform root, string name, Vector3 centre, Vector3 size)
         {
-            const int seg = 16;
-            var verts = new List<Vector3>();
-            var tris = new List<int>();
-            for (int k = 0; k < profile.Count; k++)
-            {
-                var p = profile[k];
-                float w = Mathf.Max(0.05f, halfW(p.w)), h = Mathf.Max(0.05f, halfH(p.w)), cy = centreY(p.z);
-                for (int i = 0; i < seg; i++)
-                {
-                    float a = i * Mathf.PI * 2f / seg;
-                    // Superellipse (n = 4): flat-ish sides, rounded corners.
-                    float ca = Mathf.Cos(a), sa = Mathf.Sin(a);
-                    float sx = Mathf.Sign(ca) * Mathf.Pow(Mathf.Abs(ca), 0.5f), sy = Mathf.Sign(sa) * Mathf.Pow(Mathf.Abs(sa), 0.5f);
-                    verts.Add(new Vector3(x0 + sx * w, cy + sy * h, p.z));
-                }
-            }
-            for (int k = 0; k < profile.Count - 1; k++)
-            for (int i = 0; i < seg; i++)
-            {
-                int a = k * seg + i, b = k * seg + (i + 1) % seg, c = a + seg, d = b + seg;
-                tris.AddRange(new[] { a, b, c, b, d, c });
-            }
-            // Caps.
-            foreach (int k in new[] { 0, profile.Count - 1 })
-            {
-                int centre = verts.Count;
-                var p = profile[k];
-                verts.Add(new Vector3(x0, centreY(p.z), p.z));
-                for (int i = 0; i < seg; i++)
-                {
-                    int a = k * seg + i, b = k * seg + (i + 1) % seg;
-                    if (k == 0) tris.AddRange(new[] { centre, b, a });
-                    else tris.AddRange(new[] { centre, a, b });
-                }
-            }
-            var mesh = new Mesh { name = name };
-            mesh.SetVertices(verts);
-            mesh.SetTriangles(tris, 0);
-            mesh.RecalculateNormals();
-            mesh.RecalculateBounds();
             var go = new GameObject(name);
-            go.transform.SetParent(parent, false);
-            go.AddComponent<MeshFilter>().sharedMesh = mesh;
-            go.AddComponent<MeshRenderer>().sharedMaterial = mat;
-            go.AddComponent<MeshCollider>().sharedMesh = mesh;
-            go.isStatic = true;
-            // Keep the generated mesh with the scene's assets so it survives a reload.
-            string path = $"{MatFolder}/{parent.name}_{name}.asset";
-            AssetDatabase.DeleteAsset(path);
-            AssetDatabase.CreateAsset(mesh, path);
+            go.transform.SetParent(root, false);
+            go.transform.position = centre;
+            go.layer = IgnoreRaycastLayer;
+            var box = go.AddComponent<BoxCollider>();
+            box.isTrigger = true;
+            box.size = size;
+            var s = go.AddComponent<Scannable>();
+            s.ScanId = DatabankContent.OutpostId;
+            s.DisplayName = "Kestrel-7 Outpost";
+            s.Volume = box;
         }
     }
 }

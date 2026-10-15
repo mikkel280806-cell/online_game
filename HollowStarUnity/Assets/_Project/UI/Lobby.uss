@@ -1,0 +1,272 @@
+/* Lobby: the title screen and the in-game session card. Same glass as the HUD. */
+
+.lobby {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(2, 4, 9, 0.30);
+}
+
+.lobby__inner {
+    align-items: center;
+}
+
+.lobby__titlewrap {
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 4px;
+}
+
+.lobby__titleglow {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 500px;
+    height: 500px;
+    margin-left: -250px;
+    margin-top: -250px;
+    scale: 2.6 0.42;
+}
+
+.lobby__title {
+    -unity-font-definition: url("Fonts/Orbitron-Bold.asset");
+    font-size: 88px;
+    letter-spacing: 16px;
+    padding-left: 16px;
+    color: #f2f6fb;
+    text-shadow: 0 0 16px rgba(255, 160, 80, 0.6);
+}
+
+.lobby__subtitle {
+    -unity-font-definition: url("Fonts/Rajdhani-Medium.asset");
+    font-size: 21px;
+    letter-spacing: 7px;
+    padding-left: 7px;
+    color: var(--ink-dim);
+    margin-bottom: 38px;
+}
+
+.lobby__card {
+    width: 520px;
+    padding: 26px 26px 22px 26px;
+}
+
+/* ---------- Buttons ---------- */
+
+.lobby-btn {
+    align-items: stretch;
+    justify-content: center;
+    padding: 14px 22px 15px 22px;
+    border-radius: 11px;
+}
+
+.lobby-btn__col {
+    align-items: center;
+}
+
+.lobby-btn__title {
+    -unity-font-definition: url("Fonts/Rajdhani-Bold.asset");
+    font-size: 24px;
+    letter-spacing: 3.4px;
+    padding-left: 3px;
+    color: var(--ink);
+}
+
+.lobby-btn__hint {
+    font-size: 17px;
+    color: var(--ink-dim);
+    margin-top: 1px;
+}
+
+.lobby-btn--cyan {
+    background-color: rgba(111, 227, 255, 0.17);
+}
+
+.lobby-btn--ghost .hs-sheen { display: none; }
+
+.lobby-btn--ghost {
+    background-color: rgba(255, 255, 255, 0);
+    border-color: rgba(255, 255, 255, 0.2);
+    margin-top: 0;
+}
+
+.lobby-btn--ghost .lobby-btn__title {
+    font-size: 21px;
+    color: #c4d0df;
+}
+
+.lobby-btn--ghost:hover {
+    background-color: rgba(255, 255, 255, 0.07);
+    border-color: rgba(255, 255, 255, 0.45);
+}
+
+/* ---------- Join row ---------- */
+
+.lobby__joinrow {
+    flex-direction: row;
+    margin-top: 14px;
+    margin-bottom: 4px;
+}
+
+.lobby__code {
+    flex-grow: 1;
+    margin: 0 12px 0 0;
+}
+
+.lobby__code .unity-base-text-field__input {
+    -unity-font-definition: url("Fonts/Orbitron-Bold.asset");
+    min-height: 56px;
+    margin: 0;
+    padding: 0 8px;
+    font-size: 26px;
+    letter-spacing: 8px;
+    -unity-text-align: middle-center;
+    color: var(--ink);
+    background-color: rgba(0, 0, 0, 0.38);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
+    transition: border-color 0.15s ease-out;
+}
+
+.lobby__code .unity-base-text-field__input:focus {
+    border-color: var(--amber);
+}
+
+.lobby__code .unity-base-text-field__input--placeholder,
+.lobby__code .unity-base-text-field__input .unity-text-element--placeholder {
+    color: var(--ink-faint);
+}
+
+.lobby__join {
+    width: 118px;
+    padding: 0;
+}
+
+.lobby__divider {
+    flex-direction: row;
+    align-items: center;
+    margin: 12px 0 12px 0;
+}
+
+.lobby__rule {
+    flex-grow: 1;
+    height: 1px;
+    background-color: rgba(255, 255, 255, 0.12);
+}
+
+.lobby__or {
+    -unity-font-definition: url("Fonts/Orbitron-Medium.asset");
+    font-size: 12px;
+    letter-spacing: 5px;
+    padding-left: 5px;
+    margin: 0 16px;
+    color: var(--ink-faint);
+}
+
+.lobby__status {
+    min-height: 24px;
+    margin-top: 16px;
+    font-size: 18px;
+    color: var(--ink-dim);
+    -unity-text-align: upper-center;
+    white-space: normal;
+}
+
+.lobby__status.is-error { color: var(--danger); }
+
+.lobby__keys {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 26px;
+    max-width: 700px;
+}
+
+.lobby__key {
+    flex-direction: row;
+    align-items: center;
+    margin: 4px 14px;
+}
+
+.lobby__keytext {
+    font-size: 17px;
+    color: var(--ink-dim);
+}
+
+/* ---------- In game: session card (bottom right) ---------- */
+
+.lobby-hud {
+    position: absolute;
+    right: 30px;
+    bottom: 30px;
+    min-width: 250px;
+    max-width: 340px;
+    padding: 14px 18px 14px 18px;
+}
+
+.lobby-hud__row {
+    flex-direction: row;
+    align-items: center;
+}
+
+.lobby-hud__role {
+    -unity-font-definition: url("Fonts/Rajdhani-Bold.asset");
+    font-size: 20px;
+    letter-spacing: 1px;
+}
+
+.lobby-hud__code {
+    -unity-font-definition: url("Fonts/Orbitron-Bold.asset");
+    font-size: 17px;
+    letter-spacing: 4px;
+    color: var(--amber);
+}
+
+.lobby-hud__partner {
+    margin-top: 8px;
+    font-size: 18px;
+    color: var(--ink);
+    white-space: normal;
+}
+
+.lobby-hud__partner.is-warn { color: #ff9473; }
+.lobby-hud__partner.is-dim { color: var(--ink-dim); }
+
+.lobby-hud__link {
+    margin-top: 2px;
+    font-size: 15px;
+    color: var(--ink-faint);
+}
+
+.lobby-hud__buttons {
+    flex-direction: row;
+    margin-top: 12px;
+}
+
+.lobby-hud__leave { margin-left: 8px; }
+
+/* ---------- Notice strip ---------- */
+
+.lobby-notice {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 124px;
+    align-items: center;
+}
+
+.lobby-notice__pill {
+    padding: 9px 24px 10px;
+}
+
+.lobby-notice__text {
+    -unity-font-definition: url("Fonts/Rajdhani-SemiBold.asset");
+    font-size: 19px;
+    letter-spacing: 1.2px;
+    color: var(--ink);
+}

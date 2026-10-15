@@ -114,6 +114,38 @@ Claude works within a usage limit, so:
 - **Test switches:** `-hs-auto host|join:CODE|solo`, `-hs-autowalk`, `-hs-autoleave N`. Both sides log `[HollowStar] partner at (x, z)` every 2 s.
 - **Fixed from U1:** cylinder props used capsule colliders, which turned the flat landing pad into a 13 m invisible dome. They now use mesh colliders.
 
+**U3 (2026-10-15): survival core.** Spec: `docs/U3_SURVIVAL_SPEC.md`. 102 EditMode tests pass. Solo was checked in play mode, and co-op with two `.app` copies over Relay.
+
+- **Core (`Scripts/Core/Survival/`, pure C#, tested):**
+  - Items and recipes; inventory (24 slots plus a 5-key hotbar); crafting.
+  - Vitals (O2, food, water, body temperature, health), suit gear and the game clock (20 min day).
+  - Databank, the seeded resource scatter and the objective chain.
+- **Seam:** gameplay and UI talk only through `Game/Survival/SurvivorHub.cs`. Gameplay writes the state and handles requests; the UI reads, and sends Use, Craft, Drop and hotbar requests.
+- **Gameplay (`Game/Survival/`):**
+  - **`Survivor`:** owns the local player's inventory, vitals and databank. Hotbar use, crafting with a timer (cancelled if you walk away), and death with a respawn in the *Wren* bay after 8 s.
+  - **Look-at interaction:** hold F to gather (1.2 s), hold V to scan (1.5 s).
+  - **Nodes:** about 70 resource nodes baked by `ResourceNodeBuilder` with stand-in meshes.
+  - **`WorldState`:** one NetworkObject holds node depletion and the host's clock. Gathering is a server RPC, and the yield goes back only to the gatherer.
+  - **Pressurised zones** in the bay and the habs. Partner health and oxygen are synced through NetPlayer.
+- **The *Wren*:**
+  - `SM_Wren.fbx` replaces the greybox (`WrenBuilder`: URP materials, colliders, walkable ramp).
+  - The bay zone, fabricator console, respawn points and session spawns are children of the *Wren* root (`WrenAnchors`), so the ship can move to a crash site in U4.
+- **UI:** the browser version's style is ported to UI Toolkit.
+  - `Theme.uss`, `Hud.uss`, `Pda.uss`, `Lobby.uss`; Orbitron and Rajdhani SDF fonts; vector item glyphs drawn with Painter2D.
+  - HUD: vitals, hotbar, compass, toasts, prompt and scan ring, partner card, death screen. PDA on Tab: Inventory, Fabricator, Databank, Objectives. New lobby.
+  - `-hs-uipreview` (or *Hollow Star > UI Preview*) fills the hub with fake data for screenshots.
+- **Removed:** drone combat (`Combat.cs`).
+- **Tuning choices:**
+  - Respawn lifts food and water to at least 10.
+  - Lumen bulbs and resin pods need no cutter, because the cutter's battery is made from them.
+  - "Find water" completes on gathering ice or crafting filtered water.
+- **Not done yet:**
+  - Inventory drag-and-drop.
+  - Drop deletes the stack instead of placing it in the world.
+  - Hab zones are unreachable until the habs get doors (U5).
+  - Nodes are primitive stand-ins (Blender models in U4).
+  - The sky is still dark (U4).
+
 ## 6. Visual loop in Unity
 
 Same loop as PLAN.md section 6, but now on the real Mac GPU:

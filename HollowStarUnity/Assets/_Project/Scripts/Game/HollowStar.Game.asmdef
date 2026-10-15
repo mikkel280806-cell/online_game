@@ -5,6 +5,7 @@
         "HollowStar.Core",
         "Unity.InputSystem",
         "Unity.Netcode.Runtime",
+        "Unity.Collections",
         "Unity.Services.Core",
         "Unity.Services.Authentication",
         "Unity.Services.Multiplayer"

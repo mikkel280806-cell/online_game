@@ -14,3 +14,7 @@ HollowStarUnity/Assets/_Project/Art/Terrain/*.asset
 HollowStarUnity/Assets/_Project/Art/Terrain/*.asset.meta
 # Blender backups
 *.blend1
+
+# Downloaded CC0 textures (tools/fetch_textures.py)
+HollowStarUnity/Assets/_Project/Art/Textures/CC0/
+HollowStarUnity/Assets/_Project/Art/Textures/CC0.meta

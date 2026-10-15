@@ -1,0 +1,627 @@
+/* PDA: a centred glass panel, about 1200 x 720 at the 1920 x 1080 reference. */
+
+.pda-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+.pda-scrim {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(3, 5, 10, 0.64);
+    opacity: 0;
+    transition: opacity 0.2s ease-out;
+}
+
+.pda-scrim.is-on { opacity: 1; }
+
+.pda-panel {
+    width: 1200px;
+    height: 720px;
+    max-width: 95%;
+    max-height: 94%;
+    padding: 0;
+}
+
+.pda-scanlines {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+/* ---------- Header, tabs, footer ---------- */
+
+.pda-header {
+    flex-shrink: 0;
+    flex-direction: row;
+    align-items: center;
+    padding: 22px 28px 0 30px;
+}
+
+.pda-header__icon {
+    width: 28px;
+    height: 28px;
+    margin-right: 16px;
+}
+
+.pda-title {
+    -unity-font-definition: url("Fonts/Orbitron-Bold.asset");
+    font-size: 22px;
+    letter-spacing: 6px;
+    color: var(--ink);
+    text-shadow: 0 0 10px rgba(111, 227, 255, 0.28);
+}
+
+.pda-title--cyan { color: var(--cyan); }
+
+.pda-title--dot {
+    margin-left: 8px;
+    margin-right: 8px;
+    letter-spacing: 0;
+    color: var(--ink-faint);
+}
+
+.pda-pack {
+    margin-right: 18px;
+    color: var(--ink-dim);
+}
+
+.pda-close {
+    width: 38px;
+    height: 34px;
+    padding: 0;
+}
+
+.pda-close__icon {
+    width: 16px;
+    height: 16px;
+}
+
+.pda-tabs {
+    flex-shrink: 0;
+    flex-direction: row;
+    margin-top: 16px;
+    padding-left: 22px;
+    padding-right: 22px;
+    border-bottom-width: 1px;
+    border-color: rgba(140, 200, 255, 0.15);
+}
+
+.pda-tab {
+    padding: 13px 22px 14px;
+    margin-bottom: -1px;
+    border-bottom-width: 2px;
+    border-color: rgba(111, 227, 255, 0);
+    transition: border-color 0.15s ease-out;
+}
+
+.pda-tab__text {
+    -unity-font-definition: url("Fonts/Orbitron-Medium.asset");
+    font-size: 13px;
+    letter-spacing: 3.2px;
+    color: var(--ink-dim);
+    transition: color 0.15s ease-out;
+}
+
+.pda-tab:hover .pda-tab__text { color: var(--ink); }
+
+.pda-tab.is-active { border-color: var(--cyan); }
+
+.pda-tab.is-active .pda-tab__text {
+    color: var(--cyan);
+    text-shadow: 0 0 8px rgba(111, 227, 255, 0.45);
+}
+
+.pda-body {
+    flex-grow: 1;
+    flex-shrink: 1;
+    flex-basis: 0;
+    min-height: 0;
+    padding: 24px 30px 14px 30px;
+}
+
+.pda-footer {
+    flex-shrink: 0;
+    padding: 0 30px 18px 30px;
+}
+
+.pda-footer__row {
+    flex-direction: row;
+    align-items: center;
+}
+
+.keycap--small {
+    font-size: 13px;
+    min-width: 22px;
+    height: 22px;
+    margin-right: 8px;
+    padding: 0 5px;
+    border-radius: 5px;
+}
+
+.pda-hint {
+    -unity-font-definition: url("Fonts/Orbitron-Medium.asset");
+    font-size: 10px;
+    letter-spacing: 2.4px;
+    color: var(--ink-faint);
+    margin-right: 22px;
+}
+
+.pda-page {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-height: 0;
+}
+
+/* ---------- Detail pane (shared) ---------- */
+
+.pda-detail {
+    width: 380px;
+    padding: 24px 26px 22px 26px;
+    margin-left: 26px;
+}
+
+.pda-fab__detail {
+    flex-grow: 1;
+    width: auto;
+}
+
+.pda-detail__body {
+    flex-grow: 1;
+}
+
+.pda-detail__head {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 18px;
+}
+
+.pda-badge {
+    width: 92px;
+    height: 92px;
+    margin-right: 20px;
+}
+
+.pda-badge__glyph {
+    position: absolute;
+    left: 20px;
+    top: 20px;
+    width: 52px;
+    height: 52px;
+}
+
+.pda-detail__titlecol {
+    flex-grow: 1;
+    flex-shrink: 1;
+    flex-basis: 0;
+}
+
+.pda-h1 {
+    -unity-font-definition: url("Fonts/Orbitron-Bold.asset");
+    font-size: 22px;
+    letter-spacing: 2px;
+    color: var(--ink);
+    white-space: normal;
+}
+
+.pda-chips {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-top: 10px;
+}
+
+.pda-count {
+    -unity-font-definition: url("Fonts/Rajdhani-SemiBold.asset");
+    font-size: 18px;
+    letter-spacing: 1.2px;
+    color: var(--ink-dim);
+    margin-right: 14px;
+    margin-left: 4px;
+}
+
+.pda-desc {
+    font-size: 20px;
+    color: #c4d0df;
+    white-space: normal;
+}
+
+.pda-effects {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-top: 6px;
+}
+
+.pda-section {
+    margin-top: 20px;
+    margin-bottom: 10px;
+}
+
+.pda-reason {
+    font-size: 17px;
+    color: var(--ink-dim);
+    white-space: normal;
+    margin-top: 10px;
+}
+
+.pda-empty {
+    flex-grow: 1;
+    align-items: center;
+    justify-content: center;
+}
+
+.pda-empty__glyph {
+    width: 54px;
+    height: 54px;
+    margin-bottom: 18px;
+    opacity: 0.6;
+}
+
+.pda-empty__hint {
+    margin-top: 12px;
+    max-width: 260px;
+    -unity-text-align: upper-center;
+    color: var(--ink-faint);
+    font-size: 18px;
+    white-space: normal;
+}
+
+/* ---------- Inventory ---------- */
+
+.pda-inv {
+    flex-direction: row;
+}
+
+.pda-inv__left {
+    width: 756px;
+}
+
+.pda-grid__row {
+    flex-direction: row;
+    margin-bottom: 8px;
+}
+
+.pda-slot {
+    width: 118px;
+    height: 110px;
+    margin-right: 8px;
+}
+
+.pda-slot__glyph {
+    position: absolute;
+    left: 32px;
+    top: 17px;
+    width: 54px;
+    height: 54px;
+}
+
+.pda-slot__name {
+    -unity-font-definition: url("Fonts/Rajdhani-SemiBold.asset");
+    position: absolute;
+    left: 6px;
+    right: 6px;
+    bottom: 8px;
+    font-size: 15px;
+    -unity-text-align: lower-center;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    color: #d4deeb;
+}
+
+.pda-slot__count {
+    -unity-font-definition: url("Fonts/Rajdhani-Bold.asset");
+    position: absolute;
+    right: 9px;
+    top: 6px;
+    font-size: 17px;
+    color: var(--ink);
+}
+
+.pda-slot__key {
+    -unity-font-definition: url("Fonts/Orbitron-Bold.asset");
+    position: absolute;
+    left: 8px;
+    top: 7px;
+    min-width: 18px;
+    height: 18px;
+    font-size: 10px;
+    -unity-text-align: middle-center;
+    color: #06202a;
+    background-color: var(--cyan);
+    border-radius: 5px;
+}
+
+.pda-slot.is-empty { opacity: 0.55; }
+
+.pda-actions {
+    margin-top: 8px;
+}
+
+.pda-actions--row {
+    flex-direction: row;
+}
+
+.pda-action {
+    height: 46px;
+    margin-top: 10px;
+    padding: 0 18px;
+}
+
+.pda-action .hs-btn__text { font-size: 19px; }
+
+.pda-craft { flex-grow: 1; margin-top: 12px; height: 52px; }
+
+.pda-cancel { flex-grow: 1; margin-top: 12px; height: 52px; }
+
+.pda-assign-label { margin-top: 16px; }
+
+.pda-assign {
+    flex-direction: row;
+    margin-top: 10px;
+}
+
+.pda-assign__btn {
+    width: 54px;
+    height: 40px;
+    margin-right: 8px;
+    padding: 0;
+}
+
+.pda-assign__btn.is-assigned {
+    background-color: rgba(111, 227, 255, 0.34);
+    border-color: var(--cyan);
+}
+
+.pda-drop { margin-top: 14px; }
+
+/* ---------- Fabricator and databank ---------- */
+
+.pda-fab {
+    flex-direction: row;
+}
+
+.pda-fab__list {
+    width: 420px;
+}
+
+.pda-scroll {
+    flex-grow: 1;
+    min-height: 0;
+}
+
+.pda-scroll .unity-scroll-view__vertical-scroller {
+    width: 8px;
+    margin-left: 6px;
+}
+
+.pda-scroll .unity-scroller__low-button,
+.pda-scroll .unity-scroller__high-button {
+    display: none;
+}
+
+.pda-scroll .unity-base-slider__tracker {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-width: 0;
+    border-radius: 4px;
+}
+
+.pda-scroll .unity-base-slider__dragger {
+    background-color: rgba(111, 227, 255, 0.38);
+    border-width: 0;
+    border-radius: 4px;
+    width: 6px;
+}
+
+.pda-group {
+    margin-top: 14px;
+    margin-bottom: 8px;
+    margin-left: 4px;
+}
+
+.pda-group.is-first { margin-top: 0; }
+
+.pda-row {
+    flex-direction: row;
+    align-items: center;
+    height: 48px;
+    padding: 0 14px 0 12px;
+    margin-bottom: 4px;
+    border-radius: 9px;
+    border-left-width: 3px;
+    border-color: rgba(111, 227, 255, 0);
+    background-color: rgba(255, 255, 255, 0.035);
+    transition: background-color 0.12s ease-out, border-color 0.12s ease-out;
+}
+
+.pda-row:hover { background-color: rgba(111, 227, 255, 0.10); }
+
+.pda-row.is-selected {
+    background-color: rgba(111, 227, 255, 0.17);
+    border-color: var(--cyan);
+}
+
+.pda-row.is-dim .pda-row__name { color: var(--ink-dim); }
+
+.pda-row__glyph {
+    width: 28px;
+    height: 28px;
+    margin-right: 14px;
+}
+
+.pda-row__name {
+    -unity-font-definition: url("Fonts/Rajdhani-SemiBold.asset");
+    font-size: 21px;
+    color: var(--ink);
+}
+
+.pda-row__col { flex-grow: 1; }
+
+.pda-row__sub {
+    -unity-font-definition: url("Fonts/Orbitron-Medium.asset");
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--ink-dim);
+    margin-top: -1px;
+}
+
+.pda-row__status {
+    width: 18px;
+    height: 18px;
+}
+
+.pda-ingredients {
+    margin-top: 0;
+}
+
+.pda-ing {
+    flex-direction: row;
+    align-items: center;
+    height: 42px;
+    padding: 0 14px 0 12px;
+    margin-bottom: 5px;
+    border-radius: 8px;
+    background-color: rgba(255, 255, 255, 0.045);
+}
+
+.pda-ing__glyph {
+    width: 24px;
+    height: 24px;
+    margin-right: 12px;
+}
+
+.pda-ing__name {
+    font-size: 20px;
+    color: var(--ink);
+}
+
+.pda-ing__count {
+    -unity-font-definition: url("Fonts/Rajdhani-Bold.asset");
+    font-size: 21px;
+}
+
+.pda-banner {
+    flex-direction: row;
+    align-items: center;
+    padding: 10px 16px;
+    margin-bottom: 4px;
+    border-radius: 9px;
+    border-width: 1px;
+    border-color: rgba(255, 174, 92, 0.5);
+    background-color: rgba(255, 174, 92, 0.10);
+}
+
+.pda-banner__icon {
+    width: 20px;
+    height: 20px;
+    margin-right: 12px;
+}
+
+.pda-banner__text {
+    -unity-font-definition: url("Fonts/Orbitron-Medium.asset");
+    font-size: 13px;
+    letter-spacing: 2.6px;
+    color: var(--amber);
+}
+
+.pda-progress {
+    margin-top: 6px;
+}
+
+.pda-progress__bar {
+    height: 9px;
+    margin-top: 10px;
+}
+
+.pda-db__left {
+    width: 420px;
+}
+
+.pda-db__count { margin-bottom: 12px; }
+
+.pda-db__scroll { flex-grow: 1; }
+
+.pda-db__locked {
+    margin-top: 8px;
+    font-size: 17px;
+    color: var(--ink-faint);
+    -unity-text-align: upper-center;
+}
+
+.pda-yield {
+    flex-direction: row;
+    align-items: center;
+    margin-right: 8px;
+    margin-top: 8px;
+    padding: 5px 12px 5px 8px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.14);
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.pda-yield__glyph {
+    width: 22px;
+    height: 22px;
+    margin-right: 8px;
+}
+
+.pda-yield__name {
+    font-size: 19px;
+    color: var(--ink);
+}
+
+/* ---------- Objectives ---------- */
+
+.pda-obj {
+    padding-top: 6px;
+}
+
+.pda-obj__card {
+    padding: 22px 30px 28px 28px;
+    margin-left: 4px;
+    margin-right: 4px;
+}
+
+.pda-obj__text {
+    -unity-font-definition: url("Fonts/Rajdhani-SemiBold.asset");
+    font-size: 34px;
+    color: var(--ink);
+    margin-top: 6px;
+    white-space: normal;
+}
+
+.pda-obj__loglabel { margin-top: 28px; margin-left: 4px; }
+
+.pda-obj__scroll { flex-grow: 1; }
+
+.pda-logrow {
+    flex-direction: row;
+    align-items: center;
+    height: 44px;
+    padding: 0 16px;
+    margin-bottom: 5px;
+    margin-right: 6px;
+    border-radius: 8px;
+    background-color: rgba(255, 255, 255, 0.04);
+}
+
+.pda-logrow__icon {
+    width: 20px;
+    height: 20px;
+    margin-right: 14px;
+}
+
+.pda-logrow__text {
+    font-size: 21px;
+    color: var(--ink-dim);
+}

@@ -6,7 +6,9 @@ namespace HollowStar.Game.Net
     /// Command-line switches for running two copies on one Mac and for unattended tests:
     /// <c>-hs-profile name</c> (separate sign-in per copy), <c>-hs-auto host|join:CODE|solo</c>
     /// (skip the menu), <c>-hs-autowalk</c> (the local player walks a slow circle) and
-    /// <c>-hs-autoleave seconds</c> (leave the room that long after getting in).
+    /// <c>-hs-autoleave seconds</c> (leave the room that long after getting in),
+    /// <c>-hs-autogather node@seconds</c> (that long after getting in, go to that resource node and gather it),
+    /// and <c>-hs-autohealth value</c> (start the game with that health, to see it reach the partner).
     /// </summary>
     public static class LaunchArgs
     {
@@ -20,9 +22,14 @@ namespace HollowStar.Game.Net
         public static readonly bool AutoWalk;
         /// <summary>Seconds in game before leaving on its own; 0 = never.</summary>
         public static readonly float AutoLeave;
+        /// <summary>Test: gather this node index (-1 = off), that many seconds after the game starts.</summary>
+        public static readonly int AutoGatherNode = -1;
+        public static readonly float AutoGatherDelay;
+        /// <summary>Test: set the local health to this value at the start (-1 = off).</summary>
+        public static readonly float AutoHealth = -1f;
 
         /// <summary>Any test switch is set: log extra diagnostics for the test scripts to read.</summary>
-        public static bool Automated => Auto != AutoMode.None || AutoWalk || AutoLeave > 0f;
+        public static bool Automated => Auto != AutoMode.None || AutoWalk || AutoLeave > 0f || AutoGatherNode >= 0 || AutoHealth >= 0f;
 
         static LaunchArgs()
         {
@@ -40,6 +47,17 @@ namespace HollowStar.Game.Net
                         break;
                     case "-hs-autoleave" when next != null:
                         float.TryParse(next, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out AutoLeave);
+                        break;
+                    case "-hs-autogather" when next != null:
+                    {
+                        string[] parts = next.Split('@');
+                        int.TryParse(parts[0], out AutoGatherNode);
+                        if (parts.Length > 1)
+                            float.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out AutoGatherDelay);
+                        break;
+                    }
+                    case "-hs-autohealth" when next != null:
+                        float.TryParse(next, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out AutoHealth);
                         break;
                     case "-hs-auto" when next != null:
                         if (next == "host") Auto = AutoMode.Host;

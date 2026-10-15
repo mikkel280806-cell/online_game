@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Text;
 using System.Threading.Tasks;
 using HollowStar.Core;
+using HollowStar.Game.Survival;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using Unity.Services.Core;
@@ -224,7 +225,7 @@ namespace HollowStar.Game.Net
             if (Network.IsListening && !Network.ShutdownInProgress) Network.Shutdown();
         }
 
-        /// <summary>The server places each player at their spawn point by the dropship and keeps the room to two.</summary>
+        /// <summary>The server places each player at a spawn point in the Wren's bay (falling back to the pad if there is no Wren) and keeps the room to two.</summary>
         private void Approve(NetworkManager.ConnectionApprovalRequest request, NetworkManager.ConnectionApprovalResponse response)
         {
             bool host = request.ClientNetworkId == NetworkManager.ServerClientId;
@@ -235,9 +236,17 @@ namespace HollowStar.Game.Net
                 return;
             }
             if (!host && request.Payload != null) playerIds[request.ClientNetworkId] = Encoding.UTF8.GetString(request.Payload);
-            GroundPoint spawn = Layout.SpawnPoints[host ? 0 : 1];
             response.Approved = true;
             response.CreatePlayerObject = true;
+            var anchors = WrenAnchors.Current;
+            if (anchors != null && anchors.TryGetSessionSpawn(host ? 0 : 1, out Vector3 bay, out Quaternion facing))
+            {
+                // Inside the bay: a raycast from above would land on the Wren's roof, so the anchor is used as it is.
+                response.Position = bay;
+                response.Rotation = facing;
+                return;
+            }
+            GroundPoint spawn = Layout.SpawnPoints[host ? 0 : 1];
             response.Position = SpawnPosition(spawn.X, spawn.Z);
             response.Rotation = Quaternion.Euler(0f, 180f, 0f);
         }
